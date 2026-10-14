@@ -17,6 +17,7 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
+from gamescoach import __version__
 from gamescoach.chat import ChatCoach, ChatContextError
 from gamescoach.documents import import_document
 from gamescoach.config import DEFAULT_GEMINI_MODEL, DEFAULT_OPENAI_MODEL, GEMINI_KEY_NAMES, OPENAI_KEY_NAMES, credential_binding
@@ -83,6 +84,7 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--demo", action="store_true", help="use static sample plans without calling either API"
     )
+    parser.add_argument("--version", action="version", version=f"gamescoach {__version__}")
     commands = parser.add_subparsers(dest="command")
 
     plan = commands.add_parser("plan", help="ask the two coaches to create a plan")
@@ -336,6 +338,7 @@ def _export(console: Console, session: CoachingSession, path: Path, force: bool)
 
 
 def _doctor(console: Console, *, check_api: bool = False) -> int:
+    console.print(Text(f"gamescoach {__version__}", style="dim"))
     providers = (
         ("ChatGPT", OPENAI_KEY_NAMES, "OPENAI_MODEL", DEFAULT_OPENAI_MODEL),
         ("Gemini", GEMINI_KEY_NAMES, "GEMINI_MODEL", DEFAULT_GEMINI_MODEL),
@@ -395,7 +398,7 @@ def _chat_help(console: Console, *, from_menu: bool) -> None:
     console.print(f"Type a CrossFit coaching question. /quit (or / quit), /back, and /exit {destination}.")
     console.print("/help  Show commands    /history  List saved plans and chats    /profile  Read your saved profile")
     console.print("/read ID  Read and add a saved entry to coaching context    /new  Start a fresh conversation")
-    console.print("/file PATH  Import a Word .docx, text or Markdown training file into this chat")
+    console.print("/file [PATH]  Import a Word .docx, text or Markdown training file (prompts for a path if omitted)")
     console.print("/clearrefs  Remove saved entries from coaching context; your profile and current chat remain")
 
 
@@ -500,7 +503,16 @@ def _chat(
                     _history(console, store)
                 elif name == "profile" and not argument:
                     _show_profile(console, store.load_profile())
-                elif name in ("file", "readfile") and argument:
+                elif name in ("file", "readfile"):
+                    if not argument:
+                        try:
+                            argument = console.input("Training file path (.docx, .txt or .md; Enter or /quit to cancel): ").strip()
+                        except (EOFError, KeyboardInterrupt):
+                            console.print("\nFile import cancelled.")
+                            continue
+                        if not argument or _chat_menu_back(argument):
+                            console.print("File import cancelled.")
+                            continue
                     entry = import_document(argument, coach.profile)
                     previous_context = coach.context
                     coach.add_context(entry)
@@ -641,7 +653,7 @@ def _chat_menu(console: Console, store: Store, *, demo: bool) -> None:
 
 
 def _interactive(console: Console, store: Store, *, demo: bool) -> int:
-    console.print(Panel("[bold]GamesCoach[/bold]\nChatGPT + Gemini · Your personal CrossFit athlete coach\nWorkouts, competition preparation, nutrition, and recovery for CrossFit.", border_style="cyan"))
+    console.print(Panel(f"[bold]GamesCoach {__version__}[/bold]\nChatGPT + Gemini · Your personal CrossFit athlete coach\nWorkouts, competition preparation, nutrition, and recovery for CrossFit.", border_style="cyan"))
     if demo:
         console.print("[yellow]Demo mode: static illustrative samples, no API calls.[/yellow]")
     console.print("[dim]Plans are guidance. Scale for your experience, recovery, and limitations.[/dim]")

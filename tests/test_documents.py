@@ -238,3 +238,33 @@ def test_failed_document_save_rolls_back_active_chat_context(monkeypatch, tmp_pa
     cli._chat(console, store, demo=True)
     assert coaches[0].context == []
     assert store.list_sessions() == []
+
+
+def test_bare_file_command_prompts_for_a_path_and_lists_it_in_help(console_env, tmp_path):
+    path = word_file(tmp_path / "Week 1.docx")
+    result = run_cli(console_env, "chat", "--demo", "--context-limit", "0", input_text=f"/help\n/file\n\"{path}\"\nCrossFit follow-up\n/quit\n")
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "/file [PATH]" in result.stdout
+    assert "Training file path" in result.stdout
+    assert "Unknown chat command" not in result.stdout
+    store = Store(console_env["GAMESCOACH_DATA_DIR"])
+    entry = next(item for item in store.list_sessions() if item.kind == "document")
+    chat = next(item for item in store.list_sessions() if item.kind == "chat")
+    assert chat.context_ids == [entry.id]
+
+
+@pytest.mark.parametrize("cancel", ["", "/quit", "/ quit"])
+def test_bare_file_prompt_can_be_cancelled_without_saving(console_env, cancel):
+    result = run_cli(console_env, "chat", "--demo", input_text=f"/file\n{cancel}\n/quit\n")
+    assert result.returncode == 0
+    assert "File import cancelled" in result.stdout
+    assert Store(console_env["GAMESCOACH_DATA_DIR"]).list_sessions() == []
+
+
+def test_file_prompt_handles_eof_and_version_identifies_current_app(console_env):
+    result = run_cli(console_env, "chat", "--demo", input_text="/file\n")
+    assert result.returncode == 0
+    assert "Traceback" not in result.stdout + result.stderr
+    version = run_cli(console_env, "--version")
+    assert version.returncode == 0
+    assert version.stdout.strip() == "gamescoach 0.2.0"

@@ -138,7 +138,7 @@ New chats load your saved athlete profile and the five most recent entries from 
 | `/history` | List your saved plans and conversations |
 | `/profile` | Show your saved athlete profile |
 | `/read ID` | Add a specific saved entry to the coaching context |
-| `/file PATH` | Import a Word, text or Markdown training document into this chat |
+| `/file [PATH]` | Import a training file; prompts for its path when omitted |
 | `/clearrefs` | Remove loaded entry references while retaining the current conversation |
 | `/new` | Start a fresh conversation while retaining the profile and selected references |
 
@@ -162,6 +162,8 @@ Demo chat replies are static examples. They exercise conversation storage and na
 ## Read your weekly training document
 
 Choose **9 — Import training file** in the main menu, or import directly while chatting:
+
+Type `/file` on its own to be prompted for the file path, or include the path in the same line:
 
 ```text
 /file "C:\Users\YourName\Documents\Week 1.docx"
@@ -214,6 +216,17 @@ Use the output as a planning aid. Explain injuries and current training toleranc
 AI-generated plans do not guarantee competition qualification or performance. CrossFit Open and Quarterfinals rules can change. The coaches should flag rules that need verification instead of inventing eligibility or year-specific thresholds. The app does not browse for current rules: check the official rules, movement standards, division requirements, and schedule yourself, and include them in the request when relevant.
 
 ## Check and troubleshoot
+
+If `/file` is unknown or the menu does not show **9 — Import training file**, exit the app completely and update from your `gamesCoach` checkout:
+
+```bash
+git pull --ff-only
+uv sync --locked --reinstall-package gamescoach
+uv run gamescoach --version
+uv run gamescoach
+```
+
+Version `0.2.0` includes the file-path prompt and version display. An already running app keeps its previously loaded code until restarted. Use `uv run gamescoach` from this checkout to launch its local installation, rather than an older globally installed command. Inside chat, `/help` lists the supported slash commands, including `/file [PATH]`.
 
 ```bash
 uv run gamescoach doctor
