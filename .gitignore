@@ -9,3 +9,6 @@ dist/
 *.egg-info/
 .gamescoach/
 coach-notes.local.md
+*.docx
+*.doc
+.training-files/

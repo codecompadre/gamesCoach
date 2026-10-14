@@ -6,7 +6,7 @@ import math
 import re
 from typing import Any
 
-KINDS = ("workout", "training", "nutrition", "competition", "chat")
+KINDS = ("workout", "training", "nutrition", "competition", "chat", "document")
 
 
 @dataclass

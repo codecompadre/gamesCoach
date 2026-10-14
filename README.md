@@ -138,6 +138,7 @@ New chats load your saved athlete profile and the five most recent entries from 
 | `/history` | List your saved plans and conversations |
 | `/profile` | Show your saved athlete profile |
 | `/read ID` | Add a specific saved entry to the coaching context |
+| `/file PATH` | Import a Word, text or Markdown training document into this chat |
 | `/clearrefs` | Remove loaded entry references while retaining the current conversation |
 | `/new` | Start a fresh conversation while retaining the profile and selected references |
 
@@ -157,6 +158,35 @@ Chat `show` and export include the full athlete/coach conversation. Add `--trans
 Each live message uses one discussion round by default: OpenAI drafts, Gemini reviews, and OpenAI answers, for **three API calls per message**. `chat --rounds 2` uses five calls per message and `--rounds 3` uses seven. Follow-ups include earlier messages, so longer conversations use more tokens. Slash commands do not call either API. The app stops before an oversized request and suggests starting a new chat or reducing references rather than silently forgetting earlier conversation. Use `chat --context-limit 0` to begin a new chat without automatic references, or `/clearrefs` to clear them while chatting. Clearing references keeps your conversation; information already discussed remains in that dialogue. If automatic references are too large at menu startup, the console explains that it is starting without them so you can choose entries with `/read`.
 
 Demo chat replies are static examples. They exercise conversation storage and navigation but do not interpret your message or tailor coaching to your information.
+
+## Read your weekly training document
+
+Choose **9 — Import training file** in the main menu, or import directly while chatting:
+
+```text
+/file "C:\Users\YourName\Documents\Week 1.docx"
+```
+
+For Ubuntu on Windows, right-click the document in Windows File Explorer, choose **Copy as path**, then paste that path after `/file`. Windows drive paths are translated to `/mnt/c/`, `/mnt/d/`, etc. Quotes and spaces in filenames are supported. Linux paths work too:
+
+```text
+/file "/mnt/c/Users/YourName/Documents/Week 1.docx"
+```
+
+Then ask a question, for example: “Review this week's workouts for aerobic capacity and help me pace Monday's intervals.” Both coaches receive the extracted training text alongside your chat and athlete profile.
+
+You can also import from the terminal:
+
+```bash
+uv run gamescoach import-file "/mnt/c/Users/YourName/Documents/Week 1.docx"
+uv run gamescoach
+```
+
+Supported formats are **`.docx`, `.txt`, and `.md`**. Word's main document paragraphs and workout tables are read in order, including nested tables. Embedded images, scans, headers, footers, comments and tracked-change text are not extracted. Save older `.doc` files as `.docx` in Word. Password-protected documents and PDFs are not supported. Files are limited to 10 MB and extracted text to 60000 characters; split larger programs into individual weeks.
+
+Importing makes **no API requests** and does not modify the original file. Only the extracted text is saved locally and sent to both providers when you ask a live coaching question; the original Word file and full directory path are not uploaded. Include only the training material you want to share, without API keys or other secrets. Word files and the optional `.training-files/` folder are ignored by Git; keep personal text/Markdown training files outside the checkout or in that ignored folder.
+
+Imported documents appear in history, and new chats include recent entries automatically. `/file` adds the document to the current chat and saves that reference immediately if the conversation already exists. Resume the conversation to keep using it without locating the file again, or use `/read ID` to load any previously imported document. Edits to the original file require importing it again; existing imported copies are preserved.
 
 ## Customize the coaching emphasis
 

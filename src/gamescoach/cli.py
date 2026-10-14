@@ -18,6 +18,7 @@ from rich.table import Table
 from rich.text import Text
 
 from gamescoach.chat import ChatCoach, ChatContextError
+from gamescoach.documents import import_document
 from gamescoach.config import DEFAULT_GEMINI_MODEL, DEFAULT_OPENAI_MODEL, GEMINI_KEY_NAMES, OPENAI_KEY_NAMES, credential_binding
 from gamescoach.engine import create_session
 from gamescoach.models import AthleteProfile, CoachingSession, CoachTurn
@@ -31,6 +32,7 @@ KIND_LABELS = {
     "nutrition": "CrossFit nutrition and recovery goals",
     "competition": "CrossFit competition preparation",
     "chat": "CrossFit coach chat",
+    "document": "Imported training document",
 }
 DEFAULT_REQUESTS = {
     "workout": "Create a balanced CrossFit workout with warm-up, scaling, and cooldown.",
@@ -104,6 +106,9 @@ def _parser() -> argparse.ArgumentParser:
     history = commands.add_parser("history", help="list saved plans and chats")
     history.add_argument("--limit", type=_bounded_integer(1, 100), default=10)
 
+    document = commands.add_parser("import-file", help="read and save a local Word, text or Markdown training file")
+    document.add_argument("path", help="path to a .docx, .txt or .md file (Windows paths work in Ubuntu/WSL)")
+
     show = commands.add_parser("show", help="read a saved plan or complete chat")
     show.add_argument("id", help="saved session ID")
     show.add_argument("--transcript", action="store_true", help="include the coaches' discussion")
@@ -142,6 +147,9 @@ def _render_session(console: Console, session: CoachingSession, *, transcript: b
             _render_turn(console, turn)
     if session.kind == "chat":
         _render_chat_messages(console, session)
+    elif session.kind == "document":
+        console.print(Text(session.request, style="bold green"))
+        console.print(Text(session.final_plan))
     else:
         console.print()
         console.print(Text(KIND_LABELS.get(session.kind, session.kind), style="bold green"))
@@ -297,7 +305,7 @@ def _history(console: Console, store: Store, limit: int = 10) -> None:
             Text(session.id),
             Text(session.created_at),
             Text(session.kind),
-            "Demo" if session.demo else "Live",
+            "Local file" if session.kind == "document" else "Demo" if session.demo else "Live",
             Text(session.request),
         )
     console.print(table)
@@ -305,10 +313,11 @@ def _history(console: Console, store: Store, limit: int = 10) -> None:
 
 def _export(console: Console, session: CoachingSession, path: Path, force: bool) -> None:
     path = path.expanduser()
+    mode = "Local document import" if session.kind == "document" else "Static demo (not personally customized)" if session.demo else "Live coaching"
     contents = (
         f"# GamesCoach: {KIND_LABELS.get(session.kind, session.kind)}\n\n"
         f"Session: {session.id}\n\nCreated: {session.created_at}\n\n"
-        f"Mode: {'Static demo (not personally customized)' if session.demo else 'Live coaching'}\n\n"
+        f"Mode: {mode}\n\n"
     )
     if session.kind == "chat":
         contents += "## Conversation\n\n"
@@ -386,6 +395,7 @@ def _chat_help(console: Console, *, from_menu: bool) -> None:
     console.print(f"Type a CrossFit coaching question. /quit (or / quit), /back, and /exit {destination}.")
     console.print("/help  Show commands    /history  List saved plans and chats    /profile  Read your saved profile")
     console.print("/read ID  Read and add a saved entry to coaching context    /new  Start a fresh conversation")
+    console.print("/file PATH  Import a Word .docx, text or Markdown training file into this chat")
     console.print("/clearrefs  Remove saved entries from coaching context; your profile and current chat remain")
 
 
@@ -395,7 +405,7 @@ def _chat_context(console: Console, context: list[CoachingSession]) -> None:
         return
     console.print("[dim]Saved entries loaded as coaching context:[/dim]")
     for session in context:
-        mode = "static demo" if session.demo else "live"
+        mode = "imported file" if session.kind == "document" else "static demo" if session.demo else "live"
         console.print(Text(f"  {session.id} · {session.kind} · {mode}"))
 
 
@@ -490,6 +500,18 @@ def _chat(
                     _history(console, store)
                 elif name == "profile" and not argument:
                     _show_profile(console, store.load_profile())
+                elif name in ("file", "readfile") and argument:
+                    entry = import_document(argument, coach.profile)
+                    previous_context = coach.context
+                    coach.add_context(entry)
+                    try:
+                        store.save_session(entry)
+                    except StoreError:
+                        coach.context = previous_context
+                        raise
+                    console.print(Text(f"Imported {entry.request.removeprefix('Imported training file: ')} into this chat ({entry.id}).", style="green"))
+                    console.print("Import is local; extracted text is shared with both coaches when you send a live message.")
+                    _save_chat_references(console, store, coach)
                 elif name == "read" and argument:
                     entry = store.get_session(argument)
                     if coach.session is not None and entry.id == coach.session.id:
@@ -542,6 +564,14 @@ def _chat(
 def _chat_preview(session: CoachingSession) -> str:
     request = " ".join(session.request.split())
     return request if len(request) <= 72 else request[:69] + "…"
+
+
+def _import_file(console: Console, store: Store, path: str) -> None:
+    entry = import_document(path, store.load_profile() or AthleteProfile())
+    store.save_session(entry)
+    console.print(Text(f"Imported {entry.request.removeprefix('Imported training file: ')} · {len(entry.final_plan)} text characters · {entry.id}", style="green"))
+    console.print("Saved locally. In chat, use /read followed by this ID to discuss it; new chats also load recent entries.")
+    console.print("Only extracted text is shared with both coaches during live coaching; importing makes no API calls.")
 
 
 def _chat_menu_back(choice: str) -> bool:
@@ -618,7 +648,7 @@ def _interactive(console: Console, store: Store, *, demo: bool) -> int:
     while True:
         console.print()
         console.print("[bold]1[/bold] Workout  [bold]2[/bold] Training plan  [bold]3[/bold] Nutrition  [bold]4[/bold] Competition")
-        console.print("[bold]5[/bold] Athlete profile  [bold]6[/bold] History  [bold]7[/bold] API configuration  [bold]8[/bold] Chat  [bold]q[/bold] Quit")
+        console.print("[bold]5[/bold] Athlete profile  [bold]6[/bold] History  [bold]7[/bold] API configuration  [bold]8[/bold] Chat  [bold]9[/bold] Import training file  [bold]q[/bold] Quit")
         try:
             choice = console.input("Choose: ").strip().lower()
         except EOFError:
@@ -642,8 +672,13 @@ def _interactive(console: Console, store: Store, *, demo: bool) -> int:
                 _doctor(console)
             elif choice in ("8", "chat"):
                 _chat_menu(console, store, demo=demo)
+            elif choice in ("9", "import", "import-file"):
+                path = console.input("Training file path (.docx, .txt or .md; /quit to return): ").strip()
+                if not path or _chat_menu_back(path):
+                    continue
+                _import_file(console, store, path)
             elif choice:
-                console.print("Choose 1–8 or q to quit.")
+                console.print("Choose 1–9 or q to quit.")
         except EOFError:
             console.print("\nInput ended. Returning to the shell.")
             return 0
@@ -677,6 +712,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                 _edit_profile(console, store)
         elif args.command == "history":
             _history(console, store, args.limit)
+        elif args.command == "import-file":
+            _import_file(console, store, args.path)
         elif args.command == "show":
             _render_session(console, store.get_session(args.id), transcript=args.transcript)
         elif args.command == "export":
