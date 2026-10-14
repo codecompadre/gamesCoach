@@ -8,6 +8,7 @@ from typing import Any
 
 import httpx
 
+from .config import DEFAULT_GEMINI_MODEL, DEFAULT_OPENAI_MODEL
 
 class ProviderError(Exception):
     """An actionable provider failure, safe to display without credentials."""
@@ -59,6 +60,11 @@ def _request(
     if response.status_code == 429:
         raise ProviderError(f"{name} reached a rate or quota limit. Check billing and quota, then try again later.")
     if response.status_code == 404:
+        if name == "Gemini":
+            raise ProviderError(
+                "Gemini model is unavailable for text generation. "
+                "Try GEMINI_MODEL=gemini-flash-latest, then run gamescoach doctor --check-api."
+            )
         raise ProviderError(f"{name} could not find the model. Check the configured model name and access.")
     if response.status_code >= 500:
         raise ProviderError(f"{name} is unavailable. Try again later.")
@@ -76,7 +82,7 @@ def _request(
 class OpenAIProvider:
     name = "ChatGPT"
 
-    def __init__(self, api_key: str, model: str = "gpt-5-mini", *, client: httpx.Client | None = None):
+    def __init__(self, api_key: str, model: str = DEFAULT_OPENAI_MODEL, *, client: httpx.Client | None = None):
         self._api_key = _api_key(api_key, "OPENAI_API_KEY")
         self.model = _model(model)
         self._client = client
@@ -128,7 +134,7 @@ class OpenAIProvider:
 class GeminiProvider:
     name = "Gemini"
 
-    def __init__(self, api_key: str, model: str = "gemini-2.5-flash", *, client: httpx.Client | None = None):
+    def __init__(self, api_key: str, model: str = DEFAULT_GEMINI_MODEL, *, client: httpx.Client | None = None):
         self._api_key = _api_key(api_key, "GEMINI_API_KEY")
         self.model = _model(model)
         self._client = client

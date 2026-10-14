@@ -18,10 +18,10 @@ from rich.table import Table
 from rich.text import Text
 
 from gamescoach.chat import ChatCoach, ChatContextError
-from gamescoach.config import GEMINI_KEY_NAMES, OPENAI_KEY_NAMES, credential_binding
+from gamescoach.config import DEFAULT_GEMINI_MODEL, DEFAULT_OPENAI_MODEL, GEMINI_KEY_NAMES, OPENAI_KEY_NAMES, credential_binding
 from gamescoach.engine import create_session
 from gamescoach.models import AthleteProfile, CoachingSession, CoachTurn
-from gamescoach.providers import ProviderError
+from gamescoach.providers import GeminiProvider, OpenAIProvider, ProviderError
 from gamescoach.storage import Store, StoreError
 
 
@@ -113,7 +113,8 @@ def _parser() -> argparse.ArgumentParser:
     export.add_argument("--output", required=True, type=Path, help="destination Markdown file")
     export.add_argument("--force", action="store_true", help="replace an existing destination file")
 
-    commands.add_parser("doctor", help="check API key presence without showing values or making requests")
+    doctor = commands.add_parser("doctor", help="check configuration; optionally verify live generation")
+    doctor.add_argument("--check-api", action="store_true", help="send one short, billable test to each configured provider; never print keys")
     return parser
 
 
@@ -325,10 +326,10 @@ def _export(console: Console, session: CoachingSession, path: Path, force: bool)
     console.print(Text(f"Exported {'chat' if session.kind == 'chat' else 'plan'} to {path}", style="green"))
 
 
-def _doctor(console: Console) -> int:
+def _doctor(console: Console, *, check_api: bool = False) -> int:
     providers = (
-        ("ChatGPT", OPENAI_KEY_NAMES, "OPENAI_MODEL", "gpt-5-mini"),
-        ("Gemini", GEMINI_KEY_NAMES, "GEMINI_MODEL", "gemini-2.5-flash"),
+        ("ChatGPT", OPENAI_KEY_NAMES, "OPENAI_MODEL", DEFAULT_OPENAI_MODEL),
+        ("Gemini", GEMINI_KEY_NAMES, "GEMINI_MODEL", DEFAULT_GEMINI_MODEL),
     )
     table = Table(title="API configuration (presence only)")
     table.add_column("Coach")
@@ -343,7 +344,8 @@ def _doctor(console: Console) -> int:
         model = os.environ.get(model_var, default) or "(empty override)"
         table.add_row(label, Text(status, style="green" if configured else "yellow"), Text(model))
     console.print(table)
-    console.print("[dim]This checks environment variable presence only; API connectivity, credentials, and model access were not tested.[/dim]")
+    if not check_api:
+        console.print("[dim]This checks environment variable presence only; API connectivity, credentials, and model access were not tested. Use doctor --check-api for a short billable test.[/dim]")
     if not ready:
         console.print("Set OPENAI_API_KEY and GEMINI_API_KEY in your environment to enable live coaching. The --demo option works without keys.")
     console.print("[dim]Live coaching sends your saved profile and request to both providers.[/dim]")
@@ -352,6 +354,26 @@ def _doctor(console: Console) -> int:
         console.print(Text(f"Optional CrossFit coach notes configured: {notes_path}"))
     else:
         console.print("[dim]Optional CrossFit coach notes: not configured (GAMESCOACH_COACH_NOTES_FILE).[/dim]")
+    if check_api:
+        console.print("[dim]Live generation checks may incur API charges. No athlete profile or saved conversation is sent.[/dim]")
+        for label, names, model_var, default in providers:
+            binding = credential_binding(names)
+            if binding is None:
+                console.print(Text(f"{label}: skipped — API key missing.", style="yellow"))
+                continue
+            provider_class = OpenAIProvider if label == "ChatGPT" else GeminiProvider
+            try:
+                provider = provider_class(binding[1], os.environ.get(model_var, default))
+                console.print(Text(f"Checking {label} text generation…", style="dim"))
+                provider.generate(
+                    instructions="You are a CrossFit athlete-coach. Answer in one short sentence.",
+                    prompt="Give one short tip for pacing a CrossFit workout.",
+                )
+            except ProviderError as exc:
+                ready = False
+                _error(console, exc)
+            else:
+                console.print(Text(f"{label}: live text generation passed ({provider.model}).", style="green"))
     return 0 if ready else 1
 
 
@@ -636,7 +658,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     console = Console(highlight=False)
     try:
         if args.command == "doctor":
-            return _doctor(console)
+            return _doctor(console, check_api=args.check_api)
         store = Store()
         if args.command is None:
             return _interactive(console, store, demo=args.demo)

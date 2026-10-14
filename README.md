@@ -72,11 +72,11 @@ Accepted key names:
 
 `.env.example` documents the settings; **the app does not automatically load `.env` files**. Export variables in your shell or configure them securely in your execution environment. Never paste keys into chat, a plan request, your athlete profile, or a committed file.
 
-Model defaults are `gpt-5-mini` and `gemini-2.5-flash`. Override them with environment variables if your accounts use different supported models:
+Model defaults are `gpt-5-mini` and `gemini-flash-latest`. Google's Flash alias follows its current Flash model, so the underlying version and pricing can change. Set an explicit supported model ID if you need to pin a version. Override models with environment variables:
 
 ```bash
 export OPENAI_MODEL="gpt-5-mini"
-export GEMINI_MODEL="gemini-2.5-flash"
+export GEMINI_MODEL="gemini-flash-latest"
 ```
 
 ## Use the console
@@ -187,9 +187,12 @@ AI-generated plans do not guarantee competition qualification or performance. Cr
 
 ```bash
 uv run gamescoach doctor
+uv run gamescoach doctor --check-api
 uv run pytest
 ```
 
-`doctor` checks local configuration; it is not proof that a provider accepted your credentials. If a live request fails, check that both keys are exported in the same shell, API billing and quotas are available, and the selected models are enabled for your accounts. For connection errors, verify access to `api.openai.com` and `generativelanguage.googleapis.com`. Keep TLS verification enabled.
+`doctor` alone checks local configuration without API requests. `doctor --check-api` sends one short generation request to each configured provider, returns failure if either fails, and may incur API charges. It sends no athlete profile or saved conversation and never displays keys. This tests actual generation: a model appearing in Google's listing does not guarantee its generation endpoint works.
+
+If Gemini reports that `gemini-2.5-flash` is unavailable, set `export GEMINI_MODEL="gemini-flash-latest"` in the same terminal and restart the app. An existing `GEMINI_MODEL` environment setting overrides the new default even after pulling updates. Check both keys are exported in the same shell, API billing and quotas are available, and the selected models are enabled for your accounts. For connection errors, verify access to `api.openai.com` and `generativelanguage.googleapis.com`. Keep TLS verification enabled.
 
 The offline tests exercise the CLI and provider integration with simulated responses. Successful tests do not establish live API access; confirm that with a live plan after configuring both accounts.

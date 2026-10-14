@@ -9,7 +9,7 @@ import os
 from typing import Callable
 from uuid import uuid4
 
-from .config import GEMINI_KEY_NAMES, OPENAI_KEY_NAMES, credential_binding
+from .config import DEFAULT_GEMINI_MODEL, DEFAULT_OPENAI_MODEL, GEMINI_KEY_NAMES, OPENAI_KEY_NAMES, credential_binding
 from .engine import _coach_notes
 from .models import AthleteProfile, ChatMessage, CoachTurn, CoachingSession
 from .prompts import COACH_INSTRUCTIONS, SCOPE_REFUSAL
@@ -207,8 +207,8 @@ class ChatCoach:
             if missing:
                 raise ProviderError("Live coaching needs " + " and ".join(missing) + ". Configure keys securely, or use --demo.")
             providers = [
-                OpenAIProvider(openai_binding[1], os.environ.get("OPENAI_MODEL", "gpt-5-mini")),
-                GeminiProvider(gemini_binding[1], os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")),
+                OpenAIProvider(openai_binding[1], os.environ.get("OPENAI_MODEL", DEFAULT_OPENAI_MODEL)),
+                GeminiProvider(gemini_binding[1], os.environ.get("GEMINI_MODEL", DEFAULT_GEMINI_MODEL)),
             ]
             models = {provider.name: provider.model for provider in providers}
 
