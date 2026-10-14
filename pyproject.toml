@@ -1,0 +1,23 @@
+[build-system]
+requires = ["hatchling>=1.27,<2"]
+build-backend = "hatchling.build"
+
+[project]
+name = "gamescoach"
+version = "0.1.0"
+description = "Personal CrossFit coaching conversations between ChatGPT and Gemini"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = ["httpx>=0.28,<1", "rich>=13.9,<15"]
+
+[project.scripts]
+gamescoach = "gamescoach.cli:main"
+
+[dependency-groups]
+dev = ["pytest>=8,<10"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/gamescoach"]
