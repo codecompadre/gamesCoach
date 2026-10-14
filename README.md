@@ -116,7 +116,9 @@ Replace `ID` with a saved plan ID from `history`. `--show-debate` shows the disc
 
 ## Talk to the coach
 
-Choose **8 — Chat** from the main menu, or start directly:
+Choose **8 — Chat** from the main menu. If you have saved conversations, press **Enter** to continue the most recently saved chat, choose **2** to start a new one, or **3** to pick an older conversation from a numbered list. Use **b** to return to the main menu. With no saved chats, a new conversation starts immediately. Live and demo chats appear separately.
+
+You can also start directly:
 
 ```bash
 uv run gamescoach chat

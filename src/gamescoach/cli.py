@@ -517,6 +517,77 @@ def _chat(
             console.print(Text(f"Saved chat: {completed.id}", style="dim"))
 
 
+def _chat_preview(session: CoachingSession) -> str:
+    request = " ".join(session.request.split())
+    return request if len(request) <= 72 else request[:69] + "…"
+
+
+def _chat_menu_back(choice: str) -> bool:
+    return choice in ("b", "back", "q", "quit", "exit") or _slash_command(choice) in (
+        ("quit", ""), ("back", ""), ("exit", ""),
+    )
+
+
+def _choose_saved_chat(console: Console, chats: list[CoachingSession]) -> str | None:
+    console.print("[bold]Saved conversations · most recently saved first[/bold]")
+    for number, session in enumerate(chats, 1):
+        console.print(Text(f"{number}  {_chat_preview(session)}"))
+        console.print(Text(f"   Started: {session.created_at}", style="dim"))
+    console.print("[bold]b[/bold] Return to menu")
+    while True:
+        try:
+            choice = console.input("Conversation number: ").strip().lower()
+        except (EOFError, KeyboardInterrupt):
+            console.print("\nReturning to the menu.")
+            return None
+        if _chat_menu_back(choice):
+            console.print("Returning to the menu.")
+            return None
+        try:
+            number = int(choice)
+        except ValueError:
+            number = 0
+        if 1 <= number <= len(chats):
+            return chats[number - 1].id
+        console.print(f"Choose a conversation number from 1–{len(chats)}, or b to return to the menu.")
+
+
+def _chat_menu(console: Console, store: Store, *, demo: bool) -> None:
+    chats = store.list_chats(demo=demo)
+    if not chats:
+        _chat(console, store, demo=demo, from_menu=True)
+        return
+    latest = chats[0]
+    console.print("[bold]Coach chat[/bold]")
+    console.print(Text(f"Latest conversation: {_chat_preview(latest)}"))
+    console.print(Text(f"Started: {latest.created_at}", style="dim"))
+    console.print("[bold]1[/bold] Continue latest conversation (Enter)")
+    console.print("[bold]2[/bold] Start new conversation")
+    console.print("[bold]3[/bold] Choose saved conversation")
+    console.print("[bold]b[/bold] Return to menu")
+    while True:
+        try:
+            choice = console.input("Chat option [1]: ").strip().lower()
+        except (EOFError, KeyboardInterrupt):
+            console.print("\nReturning to the menu.")
+            return
+        if _chat_menu_back(choice):
+            console.print("Returning to the menu.")
+            return
+        if choice in ("", "1", "continue", "resume"):
+            _chat(console, store, demo=demo, from_menu=True, resume=latest.id)
+            return
+        if choice in ("2", "new"):
+            _chat(console, store, demo=demo, from_menu=True)
+            return
+        if choice in ("3", "choose"):
+            selected = _choose_saved_chat(console, chats)
+            if selected is not None:
+                _chat(console, store, demo=demo, from_menu=True, resume=selected)
+            return
+        console.print("Choose 1–3, press Enter to continue the latest conversation, or b to return to the menu.")
+
+
 def _interactive(console: Console, store: Store, *, demo: bool) -> int:
     console.print(Panel("[bold]GamesCoach[/bold]\nChatGPT + Gemini · Your personal CrossFit athlete coach\nWorkouts, competition preparation, nutrition, and recovery for CrossFit.", border_style="cyan"))
     if demo:
@@ -548,7 +619,7 @@ def _interactive(console: Console, store: Store, *, demo: bool) -> int:
             elif choice in ("7", "doctor"):
                 _doctor(console)
             elif choice in ("8", "chat"):
-                _chat(console, store, demo=demo, from_menu=True)
+                _chat_menu(console, store, demo=demo)
             elif choice:
                 console.print("Choose 1–8 or q to quit.")
         except EOFError:

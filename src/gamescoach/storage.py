@@ -2,6 +2,7 @@
 
 import json
 import os
+from datetime import datetime
 from pathlib import Path
 import re
 import tempfile
@@ -122,3 +123,18 @@ class Store:
         sessions = [self.get_session(path.stem) for path in files]
         sessions.sort(key=lambda s: s.created_at, reverse=True)
         return sessions[:limit]
+
+    def list_chats(self, *, demo: bool) -> list[CoachingSession]:
+        """Find all compatible chats, with the most recently saved one first."""
+        if type(demo) is not bool:
+            raise StoreError("Choose live or demo conversations.")
+        try:
+            matches = []
+            for path in (self.root / "sessions").glob("*.json"):
+                session = self.get_session(path.stem)
+                if session.kind == "chat" and session.demo == demo:
+                    matches.append((path.stat().st_mtime_ns, datetime.fromisoformat(session.created_at).timestamp(), session))
+            matches.sort(key=lambda item: (item[0], item[1]), reverse=True)
+            return [item[2] for item in matches]
+        except OSError:
+            raise StoreError("Cannot list saved conversations. Check local data directory permissions.") from None
