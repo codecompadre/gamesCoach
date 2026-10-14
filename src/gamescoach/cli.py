@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+from dataclasses import replace
 from datetime import date
 import json
 import os
@@ -16,6 +17,7 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
+from gamescoach.chat import ChatCoach, ChatContextError
 from gamescoach.config import GEMINI_KEY_NAMES, OPENAI_KEY_NAMES, credential_binding
 from gamescoach.engine import create_session
 from gamescoach.models import AthleteProfile, CoachingSession, CoachTurn
@@ -28,6 +30,7 @@ KIND_LABELS = {
     "training": "CrossFit training plan",
     "nutrition": "CrossFit nutrition and recovery goals",
     "competition": "CrossFit competition preparation",
+    "chat": "CrossFit coach chat",
 }
 DEFAULT_REQUESTS = {
     "workout": "Create a balanced CrossFit workout with warm-up, scaling, and cooldown.",
@@ -81,24 +84,31 @@ def _parser() -> argparse.ArgumentParser:
     commands = parser.add_subparsers(dest="command")
 
     plan = commands.add_parser("plan", help="ask the two coaches to create a plan")
-    plan.add_argument("--kind", choices=tuple(KIND_LABELS), default="workout")
+    plan.add_argument("--kind", choices=tuple(DEFAULT_REQUESTS), default="workout")
     plan.add_argument("--request", required=True, type=_nonempty, help="what you want the coaches to plan")
     plan.add_argument("--rounds", type=_bounded_integer(1, 3), default=2, help="discussion rounds (1–3; default: 2)")
     plan.add_argument("--demo", dest="plan_demo", action="store_true", help="use a static sample without API calls")
     plan.add_argument("--show-debate", action="store_true", help="print the coaches' discussion before the final plan")
 
+    chat = commands.add_parser("chat", help="talk with your CrossFit coach using your profile and saved entries")
+    chat.add_argument("--demo", dest="chat_demo", action="store_true", help="use static sample replies without API calls")
+    chat.add_argument("--rounds", type=_bounded_integer(1, 3), default=1, help="discussion rounds per reply (1–3; default: 1)")
+    chat.add_argument("--show-debate", action="store_true", help="print the coaches' discussion before each final reply")
+    chat.add_argument("--resume", metavar="ID", help="continue a saved chat from history")
+    chat.add_argument("--context-limit", type=_bounded_integer(0, 5), default=5, help="recent saved entries for new chats (0–5; default: 5)")
+
     profile = commands.add_parser("profile", help="edit, show, or import your athlete profile")
     profile.add_argument("action", nargs="?", choices=("edit", "show"), default="edit")
     profile.add_argument("--file", type=Path, help="import an athlete profile from a JSON file")
 
-    history = commands.add_parser("history", help="list saved plans")
+    history = commands.add_parser("history", help="list saved plans and chats")
     history.add_argument("--limit", type=_bounded_integer(1, 100), default=10)
 
-    show = commands.add_parser("show", help="read a saved plan")
+    show = commands.add_parser("show", help="read a saved plan or complete chat")
     show.add_argument("id", help="saved session ID")
     show.add_argument("--transcript", action="store_true", help="include the coaches' discussion")
 
-    export = commands.add_parser("export", help="export a saved plan as Markdown")
+    export = commands.add_parser("export", help="export a saved plan or complete chat as Markdown")
     export.add_argument("id", help="saved session ID")
     export.add_argument("--output", required=True, type=Path, help="destination Markdown file")
     export.add_argument("--force", action="store_true", help="replace an existing destination file")
@@ -113,15 +123,28 @@ def _render_turn(console: Console, turn: CoachTurn) -> None:
     console.print(Markdown(turn.content))
 
 
+def _render_chat_messages(console: Console, session: CoachingSession) -> None:
+    for message in session.messages:
+        console.print()
+        console.print(Text("You" if message.role == "user" else "Coach", style="bold cyan" if message.role == "user" else "bold green"))
+        if message.role == "user":
+            console.print(Text(message.content))
+        else:
+            console.print(Markdown(message.content))
+
+
 def _render_session(console: Console, session: CoachingSession, *, transcript: bool = False, saved: bool = True) -> None:
     if session.demo:
         console.print("[yellow]DEMO: static illustrative sample; no live API requests or personal customization.[/yellow]")
     if transcript:
         for turn in session.turns:
             _render_turn(console, turn)
-    console.print()
-    console.print(Text(KIND_LABELS.get(session.kind, session.kind), style="bold green"))
-    console.print(Markdown(session.final_plan))
+    if session.kind == "chat":
+        _render_chat_messages(console, session)
+    else:
+        console.print()
+        console.print(Text(KIND_LABELS.get(session.kind, session.kind), style="bold green"))
+        console.print(Markdown(session.final_plan))
     console.print()
     if saved:
         console.print(Text(f"Saved session: {session.id}", style="dim"))
@@ -260,9 +283,9 @@ def _import_profile(console: Console, store: Store, path: Path) -> None:
 def _history(console: Console, store: Store, limit: int = 10) -> None:
     sessions = store.list_sessions(limit=limit)
     if not sessions:
-        console.print("No saved plans yet. Try 'gamescoach plan --demo --request \"Create a workout\"'.")
+        console.print("No saved plans or chats yet. Try 'gamescoach chat --demo' or 'gamescoach plan --demo --request \"Create a workout\"'.")
         return
-    table = Table(title="Saved plans")
+    table = Table(title="Saved plans and chats")
     table.add_column("Session ID", style="cyan", no_wrap=True)
     table.add_column("Created", no_wrap=True)
     table.add_column("Kind")
@@ -285,14 +308,21 @@ def _export(console: Console, session: CoachingSession, path: Path, force: bool)
         f"# GamesCoach: {KIND_LABELS.get(session.kind, session.kind)}\n\n"
         f"Session: {session.id}\n\nCreated: {session.created_at}\n\n"
         f"Mode: {'Static demo (not personally customized)' if session.demo else 'Live coaching'}\n\n"
-        f"## Request\n\n{session.request}\n\n## Plan\n\n{session.final_plan}\n"
     )
+    if session.kind == "chat":
+        contents += "## Conversation\n\n"
+        contents += "\n\n".join(
+            f"### {'You' if message.role == 'user' else 'Coach'}\n\n{message.content}"
+            for message in session.messages
+        ) + "\n"
+    else:
+        contents += f"## Request\n\n{session.request}\n\n## Plan\n\n{session.final_plan}\n"
     try:
         with path.open("w" if force else "x", encoding="utf-8") as output:
             output.write(contents)
     except FileExistsError as exc:
         raise ValueError(f"Destination already exists: {path}. Use --force to replace it.") from exc
-    console.print(Text(f"Exported plan to {path}", style="green"))
+    console.print(Text(f"Exported {'chat' if session.kind == 'chat' else 'plan'} to {path}", style="green"))
 
 
 def _doctor(console: Console) -> int:
@@ -329,6 +359,164 @@ def _error(console: Console, exc: BaseException) -> None:
     console.print(f"[red]Error:[/red] {escape(str(exc))}", highlight=False)
 
 
+def _chat_help(console: Console, *, from_menu: bool) -> None:
+    destination = "return to the menu" if from_menu else "return to the shell"
+    console.print(f"Type a CrossFit coaching question. /quit (or / quit), /back, and /exit {destination}.")
+    console.print("/help  Show commands    /history  List saved plans and chats    /profile  Read your saved profile")
+    console.print("/read ID  Read and add a saved entry to coaching context    /new  Start a fresh conversation")
+    console.print("/clearrefs  Remove saved entries from coaching context; your profile and current chat remain")
+
+
+def _chat_context(console: Console, context: list[CoachingSession]) -> None:
+    if not context:
+        console.print("[dim]No saved entries loaded as coaching context. Use /read ID to add one.[/dim]")
+        return
+    console.print("[dim]Saved entries loaded as coaching context:[/dim]")
+    for session in context:
+        mode = "static demo" if session.demo else "live"
+        console.print(Text(f"  {session.id} · {session.kind} · {mode}"))
+
+
+def _slash_command(message: str) -> tuple[str, str] | None:
+    if not message.startswith("/"):
+        return None
+    parts = message[1:].split(None, 1)
+    return (parts[0].lower(), parts[1].strip() if len(parts) > 1 else "") if parts else ("", "")
+
+
+def _save_chat_references(console: Console, store: Store, coach: ChatCoach) -> None:
+    if coach.session is None:
+        return
+    references = [entry.id for entry in coach.context]
+    if references == coach.session.context_ids:
+        return
+    snapshot = replace(coach.session, context_ids=references)
+    coach.session = snapshot
+    try:
+        store.save_chat(snapshot)
+    except StoreError as exc:
+        _error(console, exc)
+        console.print("[yellow]These context changes are unsaved. They remain active in memory; previously saved replies are preserved.[/yellow]")
+    else:
+        console.print(Text(f"Saved chat context: {snapshot.id}", style="dim"))
+
+
+def _chat(
+    console: Console,
+    store: Store,
+    *,
+    demo: bool = False,
+    rounds: int = 1,
+    show_debate: bool = False,
+    resume: str | None = None,
+    from_menu: bool = False,
+    context_limit: int = 5,
+) -> None:
+    profile = store.load_profile() or AthleteProfile()
+    session = store.get_session(resume) if resume else None
+    context = []
+    if session is not None:
+        for context_id in session.context_ids:
+            if context_id == resume:
+                continue
+            try:
+                context.append(store.get_session(context_id))
+            except StoreError as exc:
+                console.print(Text(f"Previously loaded context {context_id} is unavailable: {exc}", style="yellow"))
+    if session is None and context_limit:
+        recent = [entry for entry in store.list_sessions(limit=context_limit + 1) if entry.id != resume][:context_limit]
+        known = {entry.id for entry in context}
+        context.extend(entry for entry in recent if entry.id not in known)
+    try:
+        coach = ChatCoach(profile, context, rounds=rounds, demo=demo, session=session)
+    except ChatContextError as exc:
+        if not from_menu or not context:
+            raise
+        _error(console, exc)
+        console.print("[yellow]Starting chat without saved entries because they could not be loaded together. Use /read ID to add individual entries.[/yellow]")
+        coach = ChatCoach(profile, [], rounds=rounds, demo=demo, session=session)
+    console.print(Panel("[bold]CrossFit coach chat[/bold]\nTalk about workouts, training, competition, nutrition, and recovery.", border_style="cyan"))
+    if demo:
+        console.print("[yellow]DEMO: static sample replies; no API calls or personal customization.[/yellow]")
+    else:
+        console.print("[dim]Live chat sends your athlete profile, conversation, and selected saved entries to BOTH ChatGPT and Gemini.[/dim]")
+    console.print(Text(f"Athlete profile loaded: {profile.name}. Use /profile to review it."))
+    _chat_context(console, coach.context)
+    _chat_help(console, from_menu=from_menu)
+    if session is not None:
+        console.print(Text(f"Resuming chat: {session.id}", style="bold"))
+        _render_chat_messages(console, session)
+
+    while True:
+        try:
+            message = console.input("\n[bold cyan]You> [/bold cyan]").strip()
+        except (EOFError, KeyboardInterrupt):
+            console.print("\nReturning to the menu." if from_menu else "\nChat ended. Returning to the shell.")
+            return
+        if not message:
+            continue
+        command = _slash_command(message)
+        if command is not None:
+            name, argument = command
+            if name in ("quit", "back", "exit") and not argument:
+                console.print("Returning to the menu." if from_menu else "Chat ended. Returning to the shell.")
+                return
+            try:
+                if name == "help" and not argument:
+                    _chat_help(console, from_menu=from_menu)
+                elif name == "history" and not argument:
+                    _history(console, store)
+                elif name == "profile" and not argument:
+                    _show_profile(console, store.load_profile())
+                elif name == "read" and argument:
+                    entry = store.get_session(argument)
+                    if coach.session is not None and entry.id == coach.session.id:
+                        console.print("This chat is already the active conversation.")
+                    else:
+                        coach.add_context(entry)
+                        console.print(Text(f"Added coaching context: {entry.id} · {entry.kind}", style="green"))
+                        _save_chat_references(console, store, coach)
+                    _render_session(console, entry)
+                elif name == "new" and not argument:
+                    coach = ChatCoach(profile, list(coach.context), rounds=rounds, demo=demo)
+                    console.print("Started a new chat. Your athlete profile and selected saved entries are still loaded; previous chats remain in history.")
+                elif name == "clearrefs" and not argument:
+                    coach.clear_context()
+                    console.print("Removed saved entries from coaching context. Your athlete profile and current conversation are still loaded.")
+                    _save_chat_references(console, store, coach)
+                else:
+                    console.print("Unknown chat command. Use /help, or /read ID to load an entry.")
+            except (ProviderError, StoreError, ValueError, OSError) as exc:
+                _error(console, exc)
+            continue
+
+        try:
+            if not demo:
+                console.print("[dim]ChatGPT and Gemini are reviewing your question…[/dim]")
+            completed = coach.reply(
+                message,
+                on_turn=(lambda turn: _render_turn(console, turn)) if show_debate else None,
+            )
+        except KeyboardInterrupt:
+            console.print("\nReturning to the menu." if from_menu else "\nChat cancelled. Returning to the shell.")
+            return
+        except (ProviderError, StoreError, ValueError, OSError) as exc:
+            _error(console, exc)
+            console.print("[dim]Your previous conversation is unchanged. You can retry or use /quit.[/dim]")
+            continue
+
+        console.print()
+        console.print(Text("Coach", style="bold green"))
+        console.print(Markdown(completed.final_plan))
+        try:
+            store.save_chat(completed)
+        except StoreError as exc:
+            _error(console, exc)
+            console.print("[yellow]This reply is unsaved. You can continue in memory or copy it from this terminal.[/yellow]")
+        else:
+            console.print(Text(f"Saved chat: {completed.id}", style="dim"))
+
+
 def _interactive(console: Console, store: Store, *, demo: bool) -> int:
     console.print(Panel("[bold]GamesCoach[/bold]\nChatGPT + Gemini · Your personal CrossFit athlete coach\nWorkouts, competition preparation, nutrition, and recovery for CrossFit.", border_style="cyan"))
     if demo:
@@ -337,17 +525,17 @@ def _interactive(console: Console, store: Store, *, demo: bool) -> int:
     while True:
         console.print()
         console.print("[bold]1[/bold] Workout  [bold]2[/bold] Training plan  [bold]3[/bold] Nutrition  [bold]4[/bold] Competition")
-        console.print("[bold]5[/bold] Athlete profile  [bold]6[/bold] History  [bold]7[/bold] API configuration  [bold]q[/bold] Quit")
+        console.print("[bold]5[/bold] Athlete profile  [bold]6[/bold] History  [bold]7[/bold] API configuration  [bold]8[/bold] Chat  [bold]q[/bold] Quit")
         try:
             choice = console.input("Choose: ").strip().lower()
         except EOFError:
             console.print()
             return 0
-        if choice in ("q", "quit", "exit"):
+        if choice in ("q", "quit", "exit") or _slash_command(choice) in (("quit", ""), ("exit", "")):
             return 0
         try:
             if choice in ("1", "2", "3", "4"):
-                kind = tuple(KIND_LABELS)[int(choice) - 1]
+                kind = tuple(DEFAULT_REQUESTS)[int(choice) - 1]
                 request = _prompt_value(console, "What would you like to create?", DEFAULT_REQUESTS[kind], optional=False)
                 _run_plan(console, store, kind=kind, request=request, demo=demo, show_debate=True)
             elif choice in ("5", "profile"):
@@ -359,8 +547,10 @@ def _interactive(console: Console, store: Store, *, demo: bool) -> int:
                     _render_session(console, store.get_session(session_id))
             elif choice in ("7", "doctor"):
                 _doctor(console)
+            elif choice in ("8", "chat"):
+                _chat(console, store, demo=demo, from_menu=True)
             elif choice:
-                console.print("Choose 1–7 or q to quit.")
+                console.print("Choose 1–8 or q to quit.")
         except EOFError:
             console.print("\nInput ended. Returning to the shell.")
             return 0
@@ -381,6 +571,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _interactive(console, store, demo=args.demo)
         if args.command == "plan":
             _run_plan(console, store, kind=args.kind, request=args.request, rounds=args.rounds, demo=args.demo or args.plan_demo, show_debate=args.show_debate)
+        elif args.command == "chat":
+            _chat(console, store, demo=args.demo or args.chat_demo, rounds=args.rounds, show_debate=args.show_debate, resume=args.resume, context_limit=args.context_limit)
         elif args.command == "profile":
             if args.file:
                 if args.action == "show":

@@ -6,7 +6,7 @@ import math
 import re
 from typing import Any
 
-KINDS = ("workout", "training", "nutrition", "competition")
+KINDS = ("workout", "training", "nutrition", "competition", "chat")
 
 
 @dataclass
@@ -68,6 +68,18 @@ class CoachTurn:
 
 
 @dataclass
+class ChatMessage:
+    role: str
+    content: str
+
+    def __post_init__(self) -> None:
+        if self.role not in ("user", "assistant"):
+            raise ValueError("Chat messages must come from the athlete or coach.")
+        if not isinstance(self.content, str) or not self.content.strip():
+            raise ValueError("Chat messages need nonempty text.")
+
+
+@dataclass
 class CoachingSession:
     id: str
     created_at: str
@@ -78,6 +90,8 @@ class CoachingSession:
     final_plan: str
     demo: bool = False
     models: dict[str, str] = field(default_factory=dict)
+    messages: list[ChatMessage] = field(default_factory=list)
+    context_ids: list[str] = field(default_factory=list)
 
     def __post_init__(self) -> None:
         if not isinstance(self.id, str) or not re.fullmatch(r"[a-f0-9]{12,32}", self.id):
@@ -100,6 +114,22 @@ class CoachingSession:
             raise ValueError("A final plan is required.")
         if type(self.demo) is not bool or not isinstance(self.models, dict) or not all(isinstance(k, str) and isinstance(v, str) for k, v in self.models.items()):
             raise ValueError("Session metadata is invalid.")
+        if not isinstance(self.messages, list) or not all(isinstance(message, ChatMessage) for message in self.messages):
+            raise ValueError("Session chat messages are invalid.")
+        if not isinstance(self.context_ids, list) or not all(isinstance(reference, str) and re.fullmatch(r"[a-f0-9]{12,32}", reference) for reference in self.context_ids):
+            raise ValueError("Saved reference IDs are invalid.")
+        if len(set(self.context_ids)) != len(self.context_ids) or self.id in self.context_ids:
+            raise ValueError("Saved reference IDs must be distinct from the conversation ID.")
+        if self.kind == "chat":
+            if not self.messages or len(self.messages) % 2:
+                raise ValueError("Saved chats need complete athlete/coach exchanges.")
+            for index, message in enumerate(self.messages):
+                if message.role != ("user" if index % 2 == 0 else "assistant"):
+                    raise ValueError("Chat messages must alternate between athlete and coach.")
+            if self.messages[0].content != self.request or self.messages[-1].content != self.final_plan:
+                raise ValueError("Chat summary must match its first request and latest reply.")
+        elif self.messages or self.context_ids:
+            raise ValueError("Only chat sessions can contain chat messages or references.")
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -112,6 +142,7 @@ class CoachingSession:
             values = dict(data)
             values["profile"] = AthleteProfile.from_dict(values["profile"])
             values["turns"] = [CoachTurn(**turn) for turn in values["turns"]]
+            values["messages"] = [ChatMessage(**message) for message in values.get("messages", [])]
             return cls(**values)
         except (KeyError, TypeError) as exc:
             raise ValueError("Stored session is incomplete or invalid.") from exc

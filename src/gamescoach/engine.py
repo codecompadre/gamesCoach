@@ -8,7 +8,7 @@ from typing import Callable
 from uuid import uuid4
 
 from .config import GEMINI_KEY_NAMES, OPENAI_KEY_NAMES, credential_binding
-from .models import AthleteProfile, CoachTurn, CoachingSession, KINDS
+from .models import AthleteProfile, CoachTurn, CoachingSession
 from .prompts import COACH_INSTRUCTIONS, SCOPE_REFUSAL, TASK_GUIDANCE
 from .providers import GeminiProvider, OpenAIProvider, ProviderError
 
@@ -107,7 +107,7 @@ def create_session(
     demo: bool = False,
     on_turn: Callable[[CoachTurn], None] | None = None,
 ) -> CoachingSession:
-    if kind not in KINDS:
+    if kind not in TASK_GUIDANCE:
         raise ValueError("Choose workout, training, nutrition or competition.")
     if not isinstance(request, str) or not request.strip() or len(request) > 12000:
         raise ValueError("Provide a CrossFit coaching request of 1–12000 characters.")

@@ -90,6 +90,28 @@ class Store:
             raise StoreError("Saved plan ID does not match its filename.")
         return session
 
+    def save_chat(self, session: CoachingSession) -> None:
+        """Atomically persist the latest complete exchange without replacing plans."""
+        if session.kind != "chat":
+            raise StoreError("Only conversations can be updated with save_chat.")
+        self._prepare()
+        folder = self.root / "sessions"
+        path = folder / f"{session.id}.json"
+        if path.exists() and self.get_session(session.id).kind != "chat":
+            raise StoreError("This ID belongs to an existing plan; it was not overwritten.")
+        temporary = None
+        try:
+            with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=folder, prefix=".chat-", suffix=".tmp", delete=False) as handle:
+                temporary = Path(handle.name)
+                json.dump(session.to_dict(), handle, indent=2, allow_nan=False)
+                handle.write("\n")
+            os.replace(temporary, path)
+        except (OSError, ValueError):
+            raise StoreError("Cannot save conversation. Check local data directory permissions.") from None
+        finally:
+            if temporary is not None:
+                temporary.unlink(missing_ok=True)
+
     def list_sessions(self, limit: int = 10) -> list[CoachingSession]:
         if type(limit) is not int or limit < 1:
             raise StoreError("History limit must be a positive integer.")
