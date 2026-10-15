@@ -134,13 +134,13 @@ def test_export_requires_explicit_force_to_replace_file(console_env, tmp_path):
     assert session["final_plan"] in output.read_text(encoding="utf-8")
 
 
-def test_interactive_demo_workout_then_quit(console_env):
-    result = run_cli(console_env, "--demo", input_text="1\nCreate a CrossFit aerobic workout\nq\n")
+def test_interactive_demo_chat_then_quit(console_env):
+    result = run_cli(console_env, "--demo", input_text="1\nCreate a CrossFit aerobic workout\n/quit\nq\n")
     assert result.returncode == 0, result.stderr + result.stdout
     assert "personal CrossFit athlete coach" in result.stdout
     assert "ChatGPT" in result.stdout and "Gemini" in result.stdout
     session, = saved_sessions(console_env)
-    assert session["kind"] == "workout"
+    assert session["kind"] == "chat"
     assert session["request"] == "Create a CrossFit aerobic workout"
     assert session["demo"] is True
 

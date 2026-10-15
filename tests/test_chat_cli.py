@@ -59,13 +59,14 @@ def chat_console(monkeypatch, messages):
     return console, output
 
 
-def test_menu_chat_quit_returns_to_existing_workout_menu(chat_env):
-    result = run_cli(chat_env, "--demo", input_text="8\nHow do I pace my CrossFit intervals?\n/ quit\n1\nCrossFit aerobic workout\nq\n")
+def test_menu_chat_quit_returns_to_chat_first_menu(chat_env):
+    result = run_cli(chat_env, "--demo", input_text="1\nHow do I pace my CrossFit intervals?\n/ quit\n3\n\nq\n")
     assert result.returncode == 0, result.stdout + result.stderr
     assert "Returning to the menu" in result.stdout
-    assert result.stdout.count("1 Workout") >= 3
+    assert result.stdout.count("1 Chat") == 3
+    assert "Saved plans and chats" in result.stdout
     saved = sessions(chat_env)
-    assert {session["kind"] for session in saved} == {"chat", "workout"}
+    assert len(saved) == 1 and saved[0]["kind"] == "chat"
 
 
 def test_chat_two_messages_update_one_saved_thread_and_hide_debate(chat_env):
@@ -216,7 +217,7 @@ def test_missing_live_keys_keeps_console_usable_without_saving(chat_env):
     assert not sessions(chat_env)
 
 
-@pytest.mark.parametrize("args,input_text", ((["chat", "--demo"], ""), (["--demo"], "8\n")))
+@pytest.mark.parametrize("args,input_text", ((["chat", "--demo"], ""), (["--demo"], "1\n")))
 def test_eof_leaves_chat_cleanly(chat_env, args, input_text):
     result = run_cli(chat_env, *args, input_text=input_text)
     assert result.returncode == 0, result.stdout + result.stderr

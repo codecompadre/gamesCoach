@@ -416,6 +416,9 @@ def _error(console: Console, exc: BaseException) -> None:
 def _chat_help(console: Console, *, from_menu: bool) -> None:
     destination = "return to the menu" if from_menu else "return to the shell"
     console.print(f"Type a CrossFit coaching question. /quit (or / quit), /back, and /exit {destination}.")
+    console.print("/workout [REQUEST]  Create a workout    /training [REQUEST]  Create a training plan")
+    console.print("/nutrition [REQUEST]  Create fueling goals    /competition [REQUEST]  Create competition preparation")
+    console.print("Plan commands use this conversation and save a separate plan in History; in live mode they call both APIs like a coaching message.")
     console.print("/help  Show commands    /history  List saved plans and chats    /profile  Read your saved profile")
     console.print("/view  Reopen the latest coach reply; scroll with arrows/Page Up/Down and q returns to chat")
     console.print("/read ID  Read and add a saved entry to coaching context    /new  Start a fresh conversation")
@@ -574,7 +577,16 @@ def _chat(
             return
         if not message:
             continue
+        plan_kind = None
         command = _slash_command(message)
+        if command is not None and command[0] in DEFAULT_REQUESTS:
+            plan_kind, argument = command
+            if argument.lower() in ("--help", "-h", "/help"):
+                console.print(Text(f"/{plan_kind} [REQUEST] — {DEFAULT_REQUESTS[plan_kind]}"))
+                console.print("Omit REQUEST to use your current conversation and athlete profile. Saves a separate plan and a chat reply; live mode uses both APIs.")
+                continue
+            message = argument or DEFAULT_REQUESTS[plan_kind]
+            command = None
         if command is not None:
             name, argument = command
             if name in ("quit", "back", "exit") and not argument:
@@ -670,10 +682,12 @@ def _chat(
 
         try:
             if not demo:
-                console.print("[dim]ChatGPT and Gemini are reviewing your question…[/dim]")
+                console.print("[dim]ChatGPT and Gemini are drafting and reviewing your plan…[/dim]" if plan_kind else "[dim]ChatGPT and Gemini are reviewing your question…[/dim]")
+            plan_options = {"plan_kind": plan_kind} if plan_kind else {}
             completed = coach.reply(
                 message,
                 on_turn=(lambda turn: _render_turn(console, turn)) if show_debate else None,
+                **plan_options,
             )
         except KeyboardInterrupt:
             console.print("\nReturning to the menu." if from_menu else "\nChat cancelled. Returning to the shell.")
@@ -687,12 +701,25 @@ def _chat(
         if coach.context_notice and not context_notice_shown:
             console.print(Text(coach.context_notice, style="dim"))
         context_notice_shown = bool(coach.context_report)
-        render_coach(console, completed.final_plan)
+        render_coach(console, completed.final_plan, title=KIND_LABELS[plan_kind] if plan_kind else "Coach")
+        plan_saved = False
+        if plan_kind and coach.last_plan is not None:
+            try:
+                store.save_session(coach.last_plan)
+            except StoreError as exc:
+                _error(console, exc)
+                console.print("[yellow]The separate plan could not be saved. Its reply remains in this chat; saving the conversation next.[/yellow]")
+            else:
+                plan_saved = True
+                console.print(Text(f"Saved {KIND_LABELS[plan_kind]}: {coach.last_plan.id}", style="dim"))
         try:
             store.save_chat(completed)
         except StoreError as exc:
             _error(console, exc)
-            console.print("[yellow]This reply is unsaved. You can continue in memory or copy it from this terminal.[/yellow]")
+            if plan_saved:
+                console.print("[yellow]The separate plan is saved in History, but this chat update is unsaved. You can continue in memory or copy it from this terminal.[/yellow]")
+            else:
+                console.print("[yellow]This reply is unsaved. You can continue in memory or copy it from this terminal.[/yellow]")
         else:
             console.print(Text(f"Saved chat: {completed.id}", style="dim"))
 
@@ -845,44 +872,44 @@ def _interactive(console: Console, store: Store, *, demo: bool) -> int:
     console.print("[dim]Plans are guidance. Scale for your experience, recovery, and limitations.[/dim]")
     while True:
         console.print()
-        console.print("[bold]1[/bold] Workout  [bold]2[/bold] Training plan  [bold]3[/bold] Nutrition  [bold]4[/bold] Competition")
-        console.print("[bold]5[/bold] Athlete profile  [bold]6[/bold] History  [bold]7[/bold] API configuration  [bold]8[/bold] Chat  [bold]9[/bold] Import training file  [bold]q[/bold] Quit")
-        console.print("[bold]10[/bold] Methodology PDF library")
+        console.print("[bold cyan]1[/bold cyan] Chat with your coach (Enter)")
+        console.print("[bold]2[/bold] Athlete profile")
+        console.print("[bold]3[/bold] History & saved plans")
+        console.print("[bold]4[/bold] Import training file")
+        console.print("[bold]5[/bold] Methodology PDF library")
+        console.print("[bold]6[/bold] Settings / API configuration")
+        console.print("[bold]q[/bold] Quit")
         try:
-            choice = console.input("Choose: ").strip().lower()
+            choice = console.input("Choose [1]: ").strip().lower()
         except EOFError:
             console.print()
             return 0
         if choice in ("q", "quit", "exit") or _slash_command(choice) in (("quit", ""), ("exit", "")):
             return 0
         try:
-            if choice in ("1", "2", "3", "4"):
-                kind = tuple(DEFAULT_REQUESTS)[int(choice) - 1]
-                request = _prompt_value(console, "What would you like to create?", DEFAULT_REQUESTS[kind], optional=False)
-                _run_plan(console, store, kind=kind, request=request, demo=demo)
-            elif choice in ("5", "profile"):
+            if choice in ("", "1", "chat"):
+                _chat_menu(console, store, demo=demo)
+            elif choice in ("2", "profile"):
                 _edit_profile(console, store)
-            elif choice in ("6", "history"):
+            elif choice in ("3", "history"):
                 _history(console, store)
                 session_id = console.input("Session ID to open (Enter to return): ").strip()
                 if session_id:
                     _render_session(console, store.get_session(session_id))
-            elif choice in ("7", "doctor"):
-                _doctor(console)
-            elif choice in ("8", "chat"):
-                _chat_menu(console, store, demo=demo)
-            elif choice in ("9", "import", "import-file"):
+            elif choice in ("4", "import", "import-file"):
                 path = console.input("Training file path (.docx, .txt or .md; /quit to return): ").strip()
                 if not path or _chat_menu_back(path):
                     continue
                 _import_file(console, store, path)
-            elif choice in ("10", "library"):
+            elif choice in ("5", "library"):
                 _show_library(console)
                 path = console.input("PDF or folder path to add (Enter or /quit to return): ").strip()
                 if path and not _chat_menu_back(path):
                     _add_guide(console, path)
-            elif choice:
-                console.print("Choose 1–10 or q to quit.")
+            elif choice in ("6", "settings", "doctor"):
+                _doctor(console)
+            else:
+                console.print("Choose 1–6, press Enter for chat, or q to quit.")
         except EOFError:
             console.print("\nInput ended. Returning to the shell.")
             return 0

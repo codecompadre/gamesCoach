@@ -178,7 +178,7 @@ def test_terminal_library_add_list_remove_and_chat_learn_prompt(tmp_path):
 
 def test_menu_library_and_cancelled_learn_remain_usable(tmp_path):
     path = pdf_file(tmp_path / 'Guide.pdf', ['CrossFit methodology'])
-    result = run_cli('--demo', input_text=f'10\n"{path}"\n8\n/learn\n/quit\n/library\n/quit\nq\n')
+    result = run_cli('--demo', input_text=f'5\n"{path}"\n1\n/learn\n/quit\n/library\n/quit\nq\n')
     assert result.returncode == 0, result.stdout + result.stderr
     assert 'Library ready' in result.stdout and 'PDF import cancelled' in result.stdout
     assert 'Returning to the menu' in result.stdout

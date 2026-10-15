@@ -84,7 +84,7 @@ def read_document(value: str | Path) -> tuple[str, str]:
     path = document_path(value)
     suffix = path.suffix.lower()
     if suffix == ".pdf":
-        raise DocumentError("Use /learn PATH or menu 10 for methodology PDFs; /file supports .docx, .txt and .md workouts.")
+        raise DocumentError("Use /learn PATH or menu 5 for methodology PDFs; /file supports .docx, .txt and .md workouts.")
     if suffix not in (".docx", ".txt", ".md"):
         raise DocumentError("Supported files are .docx, .txt and .md. For an older .doc file, use Word's Save As to create a .docx copy.")
     try:

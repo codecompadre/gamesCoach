@@ -4,7 +4,7 @@ A personal command-line coaching console that brings OpenAI and Google Gemini in
 
 The coaches decline unrelated requests. Strength, aerobic work, nutrition, and recovery guidance must serve your CrossFit performance and readiness.
 
-Both models receive your athlete profile, request, and the shared discussion. They propose, critique, and refine the plan; OpenAI then synthesizes the final response. Plans and the discussion are saved locally so you can review or export them later. Chat mode supports follow-up conversations and can use your saved menu entries.
+Both models receive your athlete profile, request, and the shared discussion. They propose, critique, and refine the plan; OpenAI then synthesizes the final response. Chat is the main experience: ask questions, follow up, or use a plan command without leaving your conversation. Conversations, plans, and the model discussions are saved locally for review or export.
 
 ## Get started
 
@@ -37,7 +37,7 @@ uv run gamescoach --demo
 
 If you already cloned the repository, run `git pull --ff-only` from that checkout instead of cloning again. `uv` can download a compatible Python interpreter if needed. If Git or curl is missing, install it through Ubuntu's package manager. Demo mode works without API keys; for live coaching, follow **Connect both models** below, then run `uv run gamescoach` without `--demo`.
 
-The interactive console guides you through creating a profile and requesting a plan. You can try a static sample without API credentials:
+Press Enter in the console to chat, or choose **2 — Athlete profile** to add your training context first. You can also try a static plan sample without API credentials:
 
 ```bash
 uv run gamescoach plan --demo --kind workout \
@@ -81,7 +81,30 @@ export GEMINI_MODEL="gemini-flash-latest"
 
 ## Use the console
 
-Create or update your local athlete profile, then request a plan:
+The main menu keeps coaching in chat and supporting tools nearby:
+
+| Option | Action |
+| --- | --- |
+| **1** or **Enter** | Chat with your coach; continue or choose a saved conversation |
+| **2** | Create or update your athlete profile |
+| **3** | Read history and saved plans |
+| **4** | Import a training document |
+| **5** | Manage the methodology PDF library |
+| **6** | Check settings and API configuration locally, without displaying keys or calling either API |
+| **q** | Quit |
+
+Inside chat, ask naturally or create a structured plan with an optional request:
+
+```text
+/workout A 45-minute session with a barbell and rower; prioritize pacing
+/training Plan four CrossFit training days per week for the next month
+/nutrition Help me fuel my training days and recover between sessions
+/competition Prepare for my upcoming CrossFit competition
+```
+
+Each plan command uses your current conversation, profile, saved references, and active PDF guidance. Its reply stays in the conversation and is also saved as a separate plan of the selected kind in **History & saved plans**. You can follow up immediately, resume the chat later, or export the separate plan. Without a request, the command uses a default request for that plan kind and your existing context. Add `--help` to any plan command to see its usage locally without API calls.
+
+Direct terminal commands remain available, including standalone plan creation:
 
 ```bash
 uv run gamescoach profile
@@ -102,7 +125,7 @@ Choose a plan kind that matches your goal:
 
 Include relevant limits in your profile or request: experience, equipment, available time, recent training, injuries, recovery, dietary needs, and competition date or published rules. The models should identify missing information rather than assume it.
 
-The default discussion uses two rounds and five API calls: two calls to each provider followed by an OpenAI synthesis. `--rounds 1` uses three calls; `--rounds 3` uses seven. Three rounds is the maximum. There are no automatic provider retries by default. More rounds use more tokens and may cost more; provider rates and model availability depend on your account.
+Chat replies and plan commands inside chat use one discussion round and **three API calls** by default. Saving a separate plan adds no model calls. Standalone `gamescoach plan` uses two rounds and five API calls by default: two calls to each provider followed by an OpenAI synthesis. For either `chat` or `plan`, `--rounds 1` uses three calls; `--rounds 2` uses five; `--rounds 3` uses seven. Three rounds is the maximum. There are no automatic provider retries by default. More rounds use more tokens and may cost more; provider rates and model availability depend on your account.
 
 ```bash
 uv run gamescoach plan --kind training --rounds 2 \
@@ -114,13 +137,13 @@ uv run gamescoach export ID --output plan.md
 
 Replace `ID` with a saved plan ID from `history`. `--show-debate` shows the discussion when creating a plan; `show ID --transcript` retrieves it later.
 
-Coach replies use a readable layout with section colors: cyan for warm-up and cooldown, magenta for strength and skills, green for conditioning, and yellow for fueling, recovery, and scaling. Answers wrap to at most 100 columns with clear headings, spacing, and a green border. Wide weekly tables use stacked, labeled rows so prescriptions remain fully visible in smaller terminals. Menu plans show the final answer by default; the drafts and reviews remain saved and available through `--show-debate` or `show ID --transcript`. Explicit discussions label ChatGPT drafts in magenta and Gemini reviews in yellow, with the final answer displayed once.
+Coach replies use a readable layout with section colors: cyan for warm-up and cooldown, magenta for strength and skills, green for conditioning, and yellow for fueling, recovery, and scaling. Answers wrap to at most 100 columns with clear headings, spacing, and a green border. Wide weekly tables use stacked, labeled rows so prescriptions remain fully visible in smaller terminals. Chat and its plan commands show the final answer by default; drafts and reviews remain saved and available through `--show-debate` or `show ID --transcript`. Explicit discussions label ChatGPT drafts in magenta and Gemini reviews in yellow, with the final answer displayed once.
 
 Colors adapt to your terminal. To disable them, launch with `NO_COLOR=1 uv run gamescoach`; headings and section labels remain readable. Saved conversations and Markdown exports retain their original text without terminal color codes.
 
 ## Talk to the coach
 
-Choose **8 — Chat** from the main menu. If you have saved conversations, press **Enter** to continue the most recently saved chat, choose **2** to start a new one, or **3** to pick an older conversation from a numbered list. Use **b** to return to the main menu. With no saved chats, a new conversation starts immediately. Live and demo chats appear separately.
+Choose **1 — Chat** or press **Enter** at the main menu. If you have saved conversations, press **Enter** again to continue the most recently saved chat, choose **2** to start a new one, or **3** to pick an older conversation from a numbered list. Use **b** to return to the main menu. With no saved chats, a new conversation starts immediately. Live and demo chats appear separately.
 
 You can also start directly:
 
@@ -132,10 +155,14 @@ uv run gamescoach chat --demo
 
 Type a message at the `You>` prompt, then follow up naturally. Both coaches receive the context for your question; the console shows their combined athlete-facing answer. Short conversations are supplied in full. Longer conversations use recent dialogue and selected older passages about relevant topics, goals, and limitations. They remain CrossFit athlete-coaches, including when answering questions about your plans, aerobic capacity, skills, recovery, fueling, or competition preparation.
 
-New chats load your saved athlete profile and the five most recent entries from the other menu options and chat history. The console identifies those entries by ID. It uses saved plans' original requests and final recommendations; referenced chats make their athlete/coach conversation available for selection. Large documents and referenced chats contribute relevant passages when they cannot fit in full. Saved recommendations are context, not proof that you performed those workouts or followed that nutrition plan. To discuss an older entry, use `/read ID`.
+New chats load your saved athlete profile and the five most recent plans, imported documents, or chats from History. The console identifies those entries by ID. It uses saved plans' original requests and final recommendations; referenced chats make their athlete/coach conversation available for selection. Large documents and referenced chats contribute relevant passages when they cannot fit in full. Saved recommendations are context, not proof that you performed those workouts or followed that nutrition plan. To discuss an older entry, use `/read ID`.
 
 | Command | Action |
 | --- | --- |
+| `/workout [REQUEST]` | Create a structured CrossFit workout and save it separately in History |
+| `/training [REQUEST]` | Create and save a CrossFit training plan |
+| `/nutrition [REQUEST]` | Create and save nutrition and recovery goals for CrossFit |
+| `/competition [REQUEST]` | Create and save a CrossFit competition preparation plan |
 | `/quit` or `/ quit` | Return to the main menu; exit if launched with `gamescoach chat` |
 | `/back` or `/exit` | Same as `/quit` |
 | `/help` | Show the chat commands |
@@ -166,7 +193,7 @@ uv run gamescoach chat --demo --resume ID
 
 Chat `show` and export include the full athlete/coach conversation. Add `--transcript` to `show`, or `--show-debate` to `chat`, to inspect the models' discussion. Live and demo conversations cannot be mixed when resuming. A resumed conversation restores its saved reference IDs where the entries are still available, without adding recent entries automatically. `/read` and `/clearrefs` changes to an existing conversation are saved immediately; no extra model call is needed.
 
-Each live message uses one discussion round by default: OpenAI drafts, Gemini reviews, and OpenAI answers, for **three API calls per message**. `chat --rounds 2` uses five calls per message and `--rounds 3` uses seven. Slash commands do not call either API. When a conversation or its references become too large, the app automatically selects recent dialogue and older source passages locally, without an extra model call. It keeps the athlete profile and active PDF guidance available and displays a notice when selection is needed. This is app-managed context selection, not model training or an AI-written summary. Your complete messages and reference entries remain stored and exportable across restarts.
+Each live coaching message or plan command uses one discussion round by default: OpenAI drafts, Gemini reviews, and OpenAI answers, for **three API calls per reply**. `chat --rounds 2` uses five calls per reply and `--rounds 3` uses seven. Navigation, import, viewing, and help commands make no API calls; the four plan commands generate coaching and are billable in live mode. When a conversation or its references become too large, the app automatically selects recent dialogue and older source passages locally, without an extra model call. It keeps the athlete profile and active PDF guidance available and displays a notice when selection is needed. This is app-managed context selection, not model training or an AI-written summary. Your complete messages and reference entries remain stored and exportable across restarts.
 
 Use `/context` to inspect the current or most recent request's selection status. Selection can miss an older detail: name the relevant topic or entry, or repeat an important constraint in your current message, and the coaches should ask for clarification when context is missing. Keep lasting injuries, goals, and training limits in your athlete profile. You can still use `chat --context-limit 0` to begin a new chat without automatic references, or `/clearrefs` to remove them while chatting, but routine long chats no longer require either command. Clearing references keeps your conversation; information already discussed remains in that dialogue, and your methodology PDF library remains active.
 
@@ -174,7 +201,7 @@ Demo chat replies are static examples. They exercise conversation storage and na
 
 ## Read your weekly training document
 
-Choose **9 — Import training file** in the main menu, or import directly while chatting:
+Choose **4 — Import training file** in the main menu, or import directly while chatting:
 
 Type `/file` on its own to be prompted for the file path, or include the path in the same line:
 
@@ -212,7 +239,7 @@ uv run gamescoach library watch 'C:\Users\YourName\Desktop\CrossFit'
 uv run gamescoach
 ```
 
-The equivalent WSL folder path is `/mnt/c/Users/YourName/Desktop/CrossFit`. Windows **Copy as path** works too. The folder must be accessible from the computer running the CLI. You can also choose **10 — Methodology PDF library** in the menu or type `/learn` in chat and paste the folder path. The app imports PDFs directly inside that folder, including `.PDF` files, and checks for new or changed files each time you start the menu, chat, or a plan. It does not scan subfolders. Unchanged files reuse their saved text and prepared index.
+The equivalent WSL folder path is `/mnt/c/Users/YourName/Desktop/CrossFit`. Windows **Copy as path** works too. The folder must be accessible from the computer running the CLI. You can also choose **5 — Methodology PDF library** in the menu or type `/learn` in chat and paste the folder path. The app imports PDFs directly inside that folder, including `.PDF` files, and checks for new or changed files each time you start the menu, chat, or a plan. It does not scan subfolders. Unchanged files reuse their saved text and prepared index.
 
 To import individual PDFs instead, use `/learn` with each document's path:
 
@@ -275,11 +302,13 @@ AI-generated plans do not guarantee competition qualification or performance. Cr
 
 Version `0.5.0` handles long chats and large saved references with automatic local context selection. If an older version reports that the chat and references are too large, update using the commands below, then resume the same saved chat. Your full history, reference IDs, and PDF library remain available. Use `/context` to inspect selection status.
 
-If `/file` is unknown or the menu does not show **9 — Import training file**, exit the app completely and update from your `gamesCoach` checkout:
+Version `0.7.0` makes chat the default menu option and adds `/workout`, `/training`, `/nutrition`, and `/competition` inside chat. Existing profiles, conversations, saved plans, and PDF knowledge continue to work without migration.
+
+If `/file` or the plan commands are unknown, or your menu still shows separate workout, training, nutrition, and competition options, exit the app completely and update from your `gamesCoach` checkout:
 
 ```bash
 git pull --ff-only
-uv sync --locked --reinstall-package gamescoach
+uv sync --locked --reinstall-package gamescoach --link-mode=copy
 uv run gamescoach --version
 uv run gamescoach
 ```

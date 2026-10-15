@@ -56,10 +56,10 @@ def save_chat(env, request, *, demo=True, order=1):
 
 
 def test_reopen_menu_enter_resumes_same_complete_conversation(menu_env):
-    first = run_menu(menu_env, "8\nCrossFit aerobic capacity\nHow should I progress?\n/quit\nq\n")
+    first = run_menu(menu_env, "1\nCrossFit aerobic capacity\nHow should I progress?\n/quit\nq\n")
     assert first.returncode == 0, first.stdout + first.stderr
     original, = saved_entries(menu_env)
-    second = run_menu(menu_env, "8\n\nCan I retest next month?\n/ quit\nq\n")
+    second = run_menu(menu_env, "1\n\nCan I retest next month?\n/ quit\nq\n")
     assert second.returncode == 0, second.stdout + second.stderr
     assert "Continue latest conversation (Enter)" in second.stdout
     assert "Resuming chat:" in second.stdout and original["id"] in second.stdout
@@ -74,7 +74,7 @@ def test_reopen_menu_enter_resumes_same_complete_conversation(menu_env):
 
 def test_new_menu_option_preserves_old_conversation_and_saves_new_id(menu_env):
     previous = save_chat(menu_env, "CrossFit engine development")
-    result = run_menu(menu_env, "8\n2\nCrossFit competition taper\n/quit\nq\n")
+    result = run_menu(menu_env, "1\n2\nCrossFit competition taper\n/quit\nq\n")
     assert result.returncode == 0, result.stdout + result.stderr
     chats = saved_entries(menu_env)
     assert len(chats) == 2 and len({chat["id"] for chat in chats}) == 2
@@ -86,7 +86,7 @@ def test_new_menu_option_preserves_old_conversation_and_saves_new_id(menu_env):
 def test_numbered_picker_resumes_older_chat_and_retries_invalid_choices(menu_env):
     older = save_chat(menu_env, "CrossFit intervals", order=1)
     latest = save_chat(menu_env, "CrossFit nutrition", order=2)
-    result = run_menu(menu_env, "8\nunknown\n3\n\n0\n99\ninvalid\n2\nWhat pace should I use?\n/quit\nq\n")
+    result = run_menu(menu_env, "1\nunknown\n3\n\n0\n99\ninvalid\n2\nWhat pace should I use?\n/quit\nq\n")
     assert result.returncode == 0, result.stdout + result.stderr
     assert "Choose 1–3" in result.stdout
     assert result.stdout.count("Choose a conversation number") == 4
@@ -102,11 +102,11 @@ def test_numbered_picker_resumes_older_chat_and_retries_invalid_choices(menu_env
 @pytest.mark.parametrize("picker", (False, True))
 def test_back_from_chat_choices_returns_to_main_menu_without_writes(menu_env, back, picker):
     original = save_chat(menu_env, "CrossFit pacing")
-    prefix = "8\n3\n" if picker else "8\n"
+    prefix = "1\n3\n" if picker else "1\n"
     result = run_menu(menu_env, prefix + back + "\nq\n")
     assert result.returncode == 0, result.stdout + result.stderr
     assert "Returning to the menu" in result.stdout
-    assert result.stdout.count("1 Workout") == 2
+    assert result.stdout.count("1 Chat") == 2
     assert saved_entries(menu_env) == [original.to_dict()]
     assert "Resuming chat:" not in result.stdout
 
@@ -114,7 +114,7 @@ def test_back_from_chat_choices_returns_to_main_menu_without_writes(menu_env, ba
 def test_first_chat_starts_directly_when_only_plans_are_saved(menu_env):
     store = Store(menu_env["GAMESCOACH_DATA_DIR"])
     store.save_session(create_session("training", "CrossFit base training", AthleteProfile(), rounds=1, demo=True))
-    result = run_menu(menu_env, "8\nCrossFit rowing pacing\n/quit\nq\n")
+    result = run_menu(menu_env, "1\nCrossFit rowing pacing\n/quit\nq\n")
     assert result.returncode == 0, result.stdout + result.stderr
     assert "Continue latest conversation" not in result.stdout
     assert "Chat option" not in result.stdout
@@ -126,7 +126,7 @@ def test_many_newer_plans_do_not_hide_saved_conversation(menu_env):
     store = Store(menu_env["GAMESCOACH_DATA_DIR"])
     for index in range(12):
         store.save_session(create_session("workout", f"CrossFit workout {index}", AthleteProfile(), rounds=1, demo=True))
-    result = run_menu(menu_env, "8\n\n/quit\nq\n")
+    result = run_menu(menu_env, "1\n\n/quit\nq\n")
     assert result.returncode == 0, result.stdout + result.stderr
     assert "Continue latest conversation" in result.stdout
     assert f"Resuming chat: {original.id}" in result.stdout
@@ -137,7 +137,7 @@ def test_many_newer_plans_do_not_hide_saved_conversation(menu_env):
 def test_resume_picker_only_offers_chats_in_current_mode(menu_env, demo):
     matching = save_chat(menu_env, "Matching CrossFit conversation", demo=demo, order=1)
     other = save_chat(menu_env, "Other mode CrossFit conversation", demo=not demo, order=2)
-    result = run_menu(menu_env, "8\n3\n1\n/quit\nq\n", demo=demo)
+    result = run_menu(menu_env, "1\n3\n1\n/quit\nq\n", demo=demo)
     assert result.returncode == 0, result.stdout + result.stderr
     assert f"Resuming chat: {matching.id}" in result.stdout
     assert other.id not in result.stdout and other.request not in result.stdout
@@ -148,14 +148,14 @@ def test_resume_picker_only_offers_chats_in_current_mode(menu_env, demo):
 @pytest.mark.parametrize("demo", (True, False))
 def test_opposite_mode_only_skips_picker(menu_env, demo):
     save_chat(menu_env, "Different mode CrossFit coaching", demo=not demo)
-    result = run_menu(menu_env, "8\n/quit\nq\n", demo=demo)
+    result = run_menu(menu_env, "1\n/quit\nq\n", demo=demo)
     assert result.returncode == 0, result.stdout + result.stderr
     assert "Continue latest conversation" not in result.stdout
     assert "Resuming chat:" not in result.stdout
     assert len(saved_entries(menu_env)) == 1
 
 
-@pytest.mark.parametrize("input_text", ("8\n", "8\n3\n"))
+@pytest.mark.parametrize("input_text", ("1\n", "1\n3\n"))
 def test_eof_from_saved_chat_choices_returns_cleanly_without_writes(menu_env, input_text):
     original = save_chat(menu_env, "CrossFit pacing")
     result = run_menu(menu_env, input_text)

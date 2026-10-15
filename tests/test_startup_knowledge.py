@@ -76,7 +76,7 @@ def test_menu_chat_and_plan_prepare_retained_guides_at_startup(cli_env, command,
     assert "1 PDF page" in result.stdout and "1 foundation passage" in result.stdout
     assert "automatically during live coaching" in result.stdout
     if not command:
-        assert result.stdout.index("CrossFit knowledge ready") < result.stdout.index("Choose:")
+        assert result.stdout.index("CrossFit knowledge ready") < result.stdout.index("Choose [1]:")
 
 
 def test_sources_are_available_before_any_live_chat_message(cli_env):
@@ -106,7 +106,7 @@ def test_corrupt_library_warns_at_menu_but_allows_quit_and_terminal_removal(cli_
     result = run_cli(cli_env, input_text="q\n")
     assert result.returncode == 0, result.stdout + result.stderr
     assert "Methodology knowledge could not be prepared" in result.stdout
-    assert "library remove ID" in result.stdout and "Choose:" in result.stdout
+    assert "library remove ID" in result.stdout and "Choose [1]:" in result.stdout
     removed = run_cli(cli_env, "library", "remove", GUIDE_ID)
     assert removed.returncode == 0, removed.stdout + removed.stderr
     assert not broken.exists()
@@ -146,7 +146,7 @@ def test_watched_folder_picks_up_a_new_pdf_on_next_start_and_unwatch_keeps_knowl
 
 
 @pytest.mark.parametrize("command,input_template", [
-    ([], "10\n{folder}\nq\n"),
+    ([], "5\n{folder}\nq\n"),
     (["chat"], "/learn {folder}\n/sources\n/quit\n"),
 ])
 def test_menu_and_chat_accept_pdf_folders(cli_env, tmp_path, command, input_template):

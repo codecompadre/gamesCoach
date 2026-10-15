@@ -212,7 +212,7 @@ def test_file_command_persists_reference_after_restart(console_env, tmp_path):
 def test_menu_import_and_missing_files_keep_navigation_usable(console_env, tmp_path):
     path = tmp_path / "week.txt"
     path.write_text("Monday: 20 minutes easy bike.")
-    result = run_cli(console_env, "--demo", input_text=f"9\n\"{path}\"\n8\n/file /missing.docx\n/readfile /missing.txt\n/quit\nq\n")
+    result = run_cli(console_env, "--demo", input_text=f"4\n\"{path}\"\n1\n/file /missing.docx\n/readfile /missing.txt\n/quit\nq\n")
     assert result.returncode == 0, result.stdout + result.stderr
     assert "Imported week.txt" in result.stdout
     assert "Cannot open the training file" in result.stdout

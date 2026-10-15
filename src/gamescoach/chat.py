@@ -11,10 +11,10 @@ from uuid import uuid4
 
 from .config import DEFAULT_GEMINI_MODEL, DEFAULT_OPENAI_MODEL, GEMINI_KEY_NAMES, OPENAI_KEY_NAMES, credential_binding
 from .context import fit_context
-from .engine import _coach_notes
+from .engine import _coach_notes, _demo_content
 from .models import AthleteProfile, ChatMessage, CoachTurn, CoachingSession
 from .knowledge import Library
-from .prompts import COACH_INSTRUCTIONS, SCOPE_REFUSAL
+from .prompts import COACH_INSTRUCTIONS, SCOPE_REFUSAL, TASK_GUIDANCE
 from .providers import GeminiProvider, OpenAIProvider, ProviderError
 
 
@@ -105,6 +105,7 @@ class ChatCoach:
         self.rounds = rounds
         self.demo = demo
         self.session = session
+        self.last_plan: CoachingSession | None = None
         self.methodology_excerpts = deepcopy(session.methodology_excerpts) if session else []
         self.methodology_brief = [] if demo else Library().brief()
         self.context_report: dict = {}
@@ -251,9 +252,29 @@ class ChatCoach:
         self,
         message: str,
         on_turn: Callable[[CoachTurn], None] | None = None,
+        *,
+        plan_kind: str | None = None,
     ) -> CoachingSession:
+        if plan_kind is not None and (not isinstance(plan_kind, str) or plan_kind not in TASK_GUIDANCE):
+            raise ValueError("Choose workout, training, nutrition or competition.")
         if not isinstance(message, str) or not message.strip() or len(message) > _MAX_MESSAGE_CHARS:
             raise ValueError("Provide a CrossFit coaching message of 1–12000 characters.")
+        instructions = CHAT_INSTRUCTIONS
+        if plan_kind is not None:
+            instructions += (
+                "\n\nSTRUCTURED PLAN REQUEST: The athlete explicitly requested a complete "
+                + plan_kind
+                + " plan in this conversation. For this reply, produce that plan using the "
+                "supplied athlete dialogue, profile, saved entries and methodology sources. "
+                "The ordinary advice to keep chat conversational does not replace this explicit "
+                "plan request.\nTask focus: "
+                + TASK_GUIDANCE[plan_kind]
+                + "\nThe final reply will also be saved as a standalone plan. Include all "
+                "necessary prescriptions, assumptions, scaling and progress checks in that reply; "
+                "do not refer the athlete to unseen drafts or previous messages for required details. "
+                "Label missing information and use safe conditional guidance rather than guessing "
+                "loads, athlete capacity, calorie needs or current competition rules."
+            )
         reference_time = datetime.now().astimezone()
         dialogue = list(self.session.messages) if self.session else []
         dialogue.append(ChatMessage("user", message.strip()))
@@ -269,6 +290,8 @@ class ChatCoach:
         )
         # Freeze a bounded view for both coaches while preserving full records.
         prepared, self.context_report = self._prepare_data(self.context, dialogue, notes, reference_time)
+        if plan_kind is not None:
+            prepared["plan_kind"] = plan_kind
         self.methodology_excerpts = deepcopy(prepared["methodology_excerpts"])
         self._prompt(self.context, dialogue, turns, notes, "Respond to the latest athlete message.", reference_time, prepared)
 
@@ -292,13 +315,16 @@ class ChatCoach:
 
         def take_turn(index: int, stage: str, task: str) -> None:
             if self.demo:
-                content = _DEMO_INTRO + _DEMO_CONTENT[stage]
+                content = (
+                    _demo_content(plan_kind, stage.removeprefix("chat-") if stage != "chat-answer" else "synthesis")
+                    if plan_kind is not None else _DEMO_INTRO + _DEMO_CONTENT[stage]
+                )
                 provider_name = ("ChatGPT", "Gemini")[index]
             else:
                 provider = providers[index]
                 provider_name = provider.name
                 content = provider.generate(
-                    instructions=CHAT_INSTRUCTIONS,
+                    instructions=instructions,
                     prompt=self._prompt(self.context, dialogue, turns, notes, task, reference_time, prepared),
                 )
             if SCOPE_REFUSAL in content:
@@ -313,11 +339,31 @@ class ChatCoach:
 
         for index in range(self.rounds):
             if index == 0:
-                take_turn(0, "chat-proposal", "Draft a concise coaching reply to the latest athlete message using the earlier dialogue and relevant saved entries. Answer the actual question; greet or ask a focused follow-up as appropriate instead of always producing a full plan.")
+                task = (
+                    "Propose a complete, actionable CrossFit plan of the requested kind. Use the athlete's latest request, earlier dialogue, profile and relevant saved entries; preserve their constraints and label unknowns."
+                    if plan_kind is not None else
+                    "Draft a concise coaching reply to the latest athlete message using the earlier dialogue and relevant saved entries. Answer the actual question; greet or ask a focused follow-up as appropriate instead of always producing a full plan."
+                )
+                take_turn(0, "chat-proposal", task)
             else:
-                take_turn(0, "chat-refinement", "Refine the proposed reply using Gemini's specific critique. Keep it natural, directly relevant to the latest message and consistent with the athlete's earlier details.")
-            take_turn(1, "chat-review", "Review the proposed reply against the supplied athlete dialogue, earlier source excerpts, profile and saved entries. Challenge unsupported assumptions or contradictions and suggest specific CrossFit coaching corrections. Do not expand a short conversation into an unnecessary full plan.")
-        take_turn(0, "chat-answer", "Write the final athlete-facing reply to the latest message using both coaches' useful recommendations. Answer naturally and concisely, with relevant context or a focused question. Do not expose the review process or refer the athlete to unseen drafts.")
+                task = (
+                    "Revise the complete plan using Gemini's critique. Address material assumptions, contradictions, workload, progression and feasibility while preserving the athlete's supplied constraints."
+                    if plan_kind is not None else
+                    "Refine the proposed reply using Gemini's specific critique. Keep it natural, directly relevant to the latest message and consistent with the athlete's earlier details."
+                )
+                take_turn(0, "chat-refinement", task)
+            task = (
+                "Review the complete CrossFit plan against the supplied dialogue, earlier source excerpts, profile, saved entries and task focus. Challenge unsupported assumptions or contradictions; check time, volume, intensity, fueling, recovery and progression as applicable. Suggest specific corrections and preserve justified strengths."
+                if plan_kind is not None else
+                "Review the proposed reply against the supplied athlete dialogue, earlier source excerpts, profile and saved entries. Challenge unsupported assumptions or contradictions and suggest specific CrossFit coaching corrections. Do not expand a short conversation into an unnecessary full plan."
+            )
+            take_turn(1, "chat-review", task)
+        task = (
+            "Write the final standalone athlete-facing CrossFit plan of the requested kind using both coaches' useful recommendations. Include actionable details, scaling, relevant assumptions, recovery and a measurable progress check. Resolve useful critiques without exposing the review process. Do not refer the athlete to previous messages or unseen drafts for required plan details."
+            if plan_kind is not None else
+            "Write the final athlete-facing reply to the latest message using both coaches' useful recommendations. Answer naturally and concisely, with relevant context or a focused question. Do not expose the review process or refer the athlete to unseen drafts."
+        )
+        take_turn(0, "chat-answer", task)
         dialogue.append(ChatMessage("assistant", turns[-1].content))
         result = CoachingSession(
             id=self.session.id if self.session else uuid4().hex[:12],
@@ -334,5 +380,21 @@ class ChatCoach:
             methodology_brief=deepcopy(self.methodology_brief),
             context_ids=[entry.id for entry in self.context],
         )
+        plan = None
+        if plan_kind is not None:
+            plan = CoachingSession(
+                id=uuid4().hex[:12],
+                created_at=reference_time.astimezone(timezone.utc).isoformat(),
+                kind=plan_kind,
+                request=message.strip(),
+                profile=deepcopy(self.profile),
+                turns=deepcopy(turns),
+                final_plan=result.final_plan,
+                demo=self.demo,
+                models=dict(models),
+                methodology_excerpts=deepcopy(result.methodology_excerpts),
+                methodology_brief=deepcopy(result.methodology_brief),
+            )
         self.session = result
+        self.last_plan = plan
         return result

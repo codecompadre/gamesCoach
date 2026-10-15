@@ -36,11 +36,11 @@ def output_console(monkeypatch, entries=()):
 
 
 def install_distinct_plan(monkeypatch):
-    monkeypatch.setattr(
-        engine,
-        "_demo_content",
-        lambda _kind, stage: FINAL_PLAN if stage == "synthesis" else f"Intermediate coach draft: {stage}.",
-    )
+    def demo_content(_kind, stage):
+        return FINAL_PLAN if stage == "synthesis" else f"Intermediate coach draft: {stage}."
+
+    monkeypatch.setattr(engine, "_demo_content", demo_content)
+    monkeypatch.setattr(chat, "_demo_content", demo_content)
 
 
 def assert_readable_reply(output, count=1):
@@ -107,12 +107,12 @@ def test_chat_discussion_keeps_provider_labels_and_one_final_reply(monkeypatch, 
 
 def test_menu_shows_final_plan_without_intermediate_drafts(monkeypatch, readable_store):
     install_distinct_plan(monkeypatch)
-    console, output = output_console(monkeypatch, ["1", "CrossFit aerobic session", "q"])
+    console, output = output_console(monkeypatch, ["1", "/workout CrossFit aerobic session", "/quit", "q"])
     assert cli._interactive(console, readable_store, demo=True) == 0
     assert output.getvalue().count("Complete final coaching prescription.") == 1
     assert "Intermediate coach draft:" not in output.getvalue()
-    saved, = readable_store.list_sessions()
-    assert any(turn.stage == "review" for turn in saved.turns)
+    saved, = [entry for entry in readable_store.list_sessions() if entry.kind == "workout"]
+    assert any(turn.stage == "chat-review" for turn in saved.turns)
 
 
 @pytest.mark.parametrize("kind", ["chat", "workout"])
