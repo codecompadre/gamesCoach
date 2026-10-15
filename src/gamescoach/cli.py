@@ -18,7 +18,7 @@ from rich.table import Table
 from rich.text import Text
 
 from gamescoach import __version__
-from gamescoach.chat import ChatCoach, ChatContextError
+from gamescoach.chat import ChatCoach
 from gamescoach.documents import document_path, import_document
 from gamescoach.knowledge import KnowledgeError, Library
 from gamescoach.library_sources import clear_folder, configure_folder, folder_status, sync_folder
@@ -414,6 +414,7 @@ def _chat_help(console: Console, *, from_menu: bool) -> None:
     console.print("/clearrefs  Remove saved entries from coaching context; your profile and current chat remain")
     console.print("/learn [PATH]  Add a methodology PDF, or register a folder of PDFs for startup updates")
     console.print("/library  List methodology guides    /sources  Show the loaded methodology brief and selected passages")
+    console.print("/context  Show what is available to the coaches and whether local context selection is active")
     console.print("The methodology library remains active across /new and /clearrefs; remove guides with library remove ID from the terminal.")
 
 
@@ -425,6 +426,27 @@ def _chat_context(console: Console, context: list[CoachingSession]) -> None:
     for session in context:
         mode = "imported file" if session.kind == "document" else "static demo" if session.demo else "live"
         console.print(Text(f"  {session.id} · {session.kind} · {mode}"))
+
+
+def _show_chat_context(console: Console, coach: ChatCoach) -> None:
+    """Describe local request selection without making a coaching request."""
+    console.print(Text("Context for the current or most recent coaching request", style="bold"))
+    if coach.context_report:
+        console.print("Automatic context selection is active: recent chat and selected older passages are supplied to the coaches.")
+        console.print("The complete conversation and saved entries remain stored. Ask about a specific older topic to help select relevant passages.")
+    else:
+        console.print("The loaded conversation and saved entries fit the current request budget in full.")
+    message_count = len(coach.session.messages) if coach.session else 0
+    console.print(Text(f"Conversation: {message_count} available messages · {len(coach.context)} loaded reference entries"))
+    _chat_context(console, coach.context)
+    if coach.demo:
+        console.print("Demo replies make no API calls and do not use PDF guidance.")
+    else:
+        ready = Library().prepare()
+        console.print(Text(f"PDF knowledge: {ready['guides']} guides · {ready['pages']} PDF pages"))
+        if ready["guides"]:
+            console.print("The methodology brief and relevant PDF passages remain active during context selection. Use /sources to inspect them.")
+    console.print("Context selection runs locally without extra API calls; show or export the chat to read its complete history.")
 
 
 def _slash_command(message: str) -> tuple[str, str] | None:
@@ -477,14 +499,7 @@ def _chat(
         recent = [entry for entry in store.list_sessions(limit=context_limit + 1) if entry.id != resume][:context_limit]
         known = {entry.id for entry in context}
         context.extend(entry for entry in recent if entry.id not in known)
-    try:
-        coach = ChatCoach(profile, context, rounds=rounds, demo=demo, session=session)
-    except ChatContextError as exc:
-        if not from_menu or not context:
-            raise
-        _error(console, exc)
-        console.print("[yellow]Starting chat without saved entries because they could not be loaded together. Use /read ID to add individual entries.[/yellow]")
-        coach = ChatCoach(profile, [], rounds=rounds, demo=demo, session=session)
+    coach = ChatCoach(profile, context, rounds=rounds, demo=demo, session=session)
     console.print(Panel("[bold]CrossFit coach chat[/bold]\nTalk about workouts, training, competition, nutrition, and recovery.", border_style="cyan"))
     if demo:
         console.print("[yellow]DEMO: static sample replies; no API calls or personal customization.[/yellow]")
@@ -493,6 +508,9 @@ def _chat(
     console.print(Text(f"Athlete profile loaded: {profile.name}. Use /profile to review it."))
     _chat_context(console, coach.context)
     _chat_help(console, from_menu=from_menu)
+    context_notice_shown = bool(coach.context_report)
+    if coach.context_notice:
+        console.print(Text(coach.context_notice, style="dim"))
     if session is not None:
         console.print(Text(f"Resuming chat: {session.id}", style="bold"))
         _render_chat_messages(console, session)
@@ -520,6 +538,8 @@ def _chat(
                     _show_profile(console, store.load_profile())
                 elif name == "library" and not argument:
                     _show_library(console)
+                elif name == "context" and not argument:
+                    _show_chat_context(console, coach)
                 elif name == "sources" and not argument:
                     coach.methodology_brief = [] if demo else Library().brief()
                     sources = (
@@ -559,11 +579,13 @@ def _chat(
                             continue
                     entry = import_document(argument, coach.profile)
                     previous_context = coach.context
+                    previous_report = coach.context_report
                     coach.add_context(entry)
                     try:
                         store.save_session(entry)
                     except StoreError:
                         coach.context = previous_context
+                        coach.context_report = previous_report
                         raise
                     console.print(Text(f"Imported {entry.request.removeprefix('Imported training file: ')} into this chat ({entry.id}).", style="green"))
                     console.print("Import is local; extracted text is shared with both coaches when you send a live message.")
@@ -580,6 +602,9 @@ def _chat(
                 elif name == "new" and not argument:
                     coach = ChatCoach(profile, list(coach.context), rounds=rounds, demo=demo)
                     console.print("Started a new chat. Your athlete profile and selected saved entries are still loaded; previous chats remain in history.")
+                    context_notice_shown = bool(coach.context_report)
+                    if coach.context_notice:
+                        console.print(Text(coach.context_notice, style="dim"))
                 elif name == "clearrefs" and not argument:
                     coach.clear_context()
                     console.print("Removed saved entries from coaching context. Your athlete profile and current conversation are still loaded.")
@@ -606,6 +631,9 @@ def _chat(
             continue
 
         console.print()
+        if coach.context_notice and not context_notice_shown:
+            console.print(Text(coach.context_notice, style="dim"))
+        context_notice_shown = bool(coach.context_report)
         console.print(Text("Coach", style="bold green"))
         console.print(Markdown(completed.final_plan))
         try:

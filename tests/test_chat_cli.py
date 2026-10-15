@@ -312,7 +312,7 @@ def test_provider_failure_keeps_prior_history_and_allows_next_reply(monkeypatch,
     assert "Example provider failure" in output.getvalue()
 
 
-def test_menu_context_overflow_explicitly_starts_without_references(monkeypatch, tmp_path):
+def test_menu_context_error_preserves_saved_references_instead_of_silently_dropping_them(monkeypatch, tmp_path):
     store = Store(tmp_path / "data")
     plan = create_session("training", "CrossFit", AthleteProfile(), rounds=1, demo=True)
     store.save_session(plan)
@@ -325,10 +325,10 @@ def test_menu_context_overflow_explicitly_starts_without_references(monkeypatch,
 
     monkeypatch.setattr(cli, "ChatCoach", OverflowCoach)
     console, output = chat_console(monkeypatch, ["CrossFit question", "/quit"])
-    cli._chat(console, store, demo=True, from_menu=True)
-    assert "Starting chat without saved entries" in output.getvalue()
-    saved, = [entry for entry in store.list_sessions() if entry.kind == "chat"]
-    assert saved.context_ids == []
+    with pytest.raises(ChatContextError, match="Saved references are too large"):
+        cli._chat(console, store, demo=True, from_menu=True)
+    assert "Starting chat without saved entries" not in output.getvalue()
+    assert [entry.id for entry in store.list_sessions()] == [plan.id]
 
 
 def test_keyboard_interrupt_returns_to_menu(monkeypatch, tmp_path):

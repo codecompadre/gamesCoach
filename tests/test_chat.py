@@ -305,40 +305,51 @@ def test_resume_rejects_plan_and_mismatched_demo_mode():
         chat.ChatCoach(AthleteProfile(), [], session=demo)
 
 
-def test_oversized_saved_context_rejected_without_truncation_or_provider_calls(monkeypatch):
+def test_oversized_saved_context_is_selected_without_changing_full_references(monkeypatch):
     calls, initialized = fake_coaches(monkeypatch)
     coach = chat.ChatCoach(AthleteProfile(), [saved_entry()])
-    before = list(coach.context)
     huge = saved_entry("training", "111122223333", "Training plan detail. " * 10000)
-    with pytest.raises(ValueError, match="fewer saved references"):
-        coach.add_context(huge)
-    assert coach.context == before
-    with pytest.raises(ValueError, match="/new"):
-        chat.ChatCoach(AthleteProfile(), [huge])
+    coach.add_context(huge)
+    assert coach.context[-1] is huge
+    assert coach.context_report and coach.context_notice
+    assert chat.ChatCoach(AthleteProfile(), [huge]).context == [huge]
     assert not calls and not initialized
 
 
-def test_oversized_history_rejected_before_next_paid_call_and_old_history_preserved(monkeypatch):
+def test_oversized_history_continues_with_full_saved_history_preserved(monkeypatch):
     keys(monkeypatch)
-    calls, _ = fake_coaches(monkeypatch, ["draft", "review", "answer " * 400])
+    calls, _ = fake_coaches(monkeypatch, ["draft", "review", "answer " * 20000, "new draft", "new review", "new answer"])
     coach = chat.ChatCoach(AthleteProfile(), [])
     first = coach.reply("CrossFit coaching question.")
     before = first.to_dict()
-    monkeypatch.setattr(chat, "_MAX_CONTEXT_CHARS", 1500)
-    with pytest.raises(ValueError, match="/new"):
-        coach.reply("A follow-up about CrossFit pacing.")
-    assert len(calls) == 3
-    assert coach.session is first and first.to_dict() == before
+    second = coach.reply("A follow-up about CrossFit pacing.")
+    assert len(calls) == 6
+    assert coach.context_report
+    assert all(len(prompt) <= chat._MAX_CONTEXT_CHARS for _, _, prompt in calls)
+    assert first.to_dict() == before and second.messages[:2] == first.messages
 
 
-def test_oversized_coach_output_stops_before_subsequent_paid_call(monkeypatch):
+def test_oversized_coach_outputs_are_selected_for_subsequent_calls_and_saved_in_full(monkeypatch):
     keys(monkeypatch)
-    calls, _ = fake_coaches(monkeypatch, ["x" * 100001])
+    calls, _ = fake_coaches(monkeypatch, ["x" * 100001, "y" * 100001, "final answer"])
     coach = chat.ChatCoach(AthleteProfile(), [])
-    with pytest.raises(ValueError, match="/new"):
-        coach.reply("CrossFit coaching question.")
-    assert len(calls) == 1
-    assert coach.session is None
+    result = coach.reply("CrossFit coaching question.")
+    assert len(calls) == 3
+    assert coach.context_report
+    assert all(len(prompt) <= chat._MAX_CONTEXT_CHARS for _, _, prompt in calls)
+    assert result.turns[0].content == "x" * 100001
+    assert result.turns[1].content == "y" * 100001
+
+
+def test_essential_context_too_large_fails_before_any_paid_call(monkeypatch):
+    keys(monkeypatch)
+    calls, initialized = fake_coaches(monkeypatch)
+    profile = AthleteProfile(**{name: "x" * 8000 for name in ("name", "experience", "goals", "equipment", "limitations", "dietary_preferences")})
+    coach = chat.ChatCoach(profile, [])
+    monkeypatch.setattr(chat, "_coach_notes", lambda: "n" * 16000)
+    with pytest.raises(chat.ChatContextError, match="profile|notes"):
+        coach.reply("Help with my CrossFit pacing.")
+    assert not calls and not initialized
 
 
 def test_invalid_coach_notes_fail_before_paid_call(monkeypatch, tmp_path):

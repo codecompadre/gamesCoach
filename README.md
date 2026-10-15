@@ -126,9 +126,9 @@ uv run gamescoach chat
 uv run gamescoach chat --demo
 ```
 
-Type a message at the `You>` prompt, then follow up naturally. Both coaches receive the conversation so far; the console shows their combined athlete-facing answer. They remain CrossFit athlete-coaches, including when answering questions about your plans, aerobic capacity, skills, recovery, fueling, or competition preparation.
+Type a message at the `You>` prompt, then follow up naturally. Both coaches receive the context for your question; the console shows their combined athlete-facing answer. Short conversations are supplied in full. Longer conversations use recent dialogue and selected older passages about relevant topics, goals, and limitations. They remain CrossFit athlete-coaches, including when answering questions about your plans, aerobic capacity, skills, recovery, fueling, or competition preparation.
 
-New chats load your saved athlete profile and the five most recent entries from the other menu options and chat history. The console identifies those entries by ID. It uses saved plans' original requests and final recommendations; referenced chats contribute their full athlete/coach conversation. Saved recommendations are context, not proof that you performed those workouts or followed that nutrition plan. To discuss an older entry, use `/read ID`.
+New chats load your saved athlete profile and the five most recent entries from the other menu options and chat history. The console identifies those entries by ID. It uses saved plans' original requests and final recommendations; referenced chats make their athlete/coach conversation available for selection. Large documents and referenced chats contribute relevant passages when they cannot fit in full. Saved recommendations are context, not proof that you performed those workouts or followed that nutrition plan. To discuss an older entry, use `/read ID`.
 
 | Command | Action |
 | --- | --- |
@@ -142,6 +142,7 @@ New chats load your saved athlete profile and the five most recent entries from 
 | `/learn [PATH]` | Add a methodology PDF to the persistent coaching library |
 | `/library` | List your saved methodology guides |
 | `/sources` | Inspect the automatically loaded methodology brief and passages selected for the latest question |
+| `/context` | Inspect whether context selection is active, available conversation and reference counts, and PDF knowledge status |
 | `/clearrefs` | Remove loaded entry references while retaining the current conversation |
 | `/new` | Start a fresh conversation while retaining the profile and selected references |
 
@@ -158,7 +159,9 @@ uv run gamescoach chat --demo --resume ID
 
 Chat `show` and export include the full athlete/coach conversation. Add `--transcript` to `show`, or `--show-debate` to `chat`, to inspect the models' discussion. Live and demo conversations cannot be mixed when resuming. A resumed conversation restores its saved reference IDs where the entries are still available, without adding recent entries automatically. `/read` and `/clearrefs` changes to an existing conversation are saved immediately; no extra model call is needed.
 
-Each live message uses one discussion round by default: OpenAI drafts, Gemini reviews, and OpenAI answers, for **three API calls per message**. `chat --rounds 2` uses five calls per message and `--rounds 3` uses seven. Follow-ups include earlier messages, so longer conversations use more tokens. Slash commands do not call either API. The app stops before an oversized request and suggests starting a new chat or reducing references rather than silently forgetting earlier conversation. Use `chat --context-limit 0` to begin a new chat without automatic references, or `/clearrefs` to clear them while chatting. Clearing references keeps your conversation; information already discussed remains in that dialogue. If automatic references are too large at menu startup, the console explains that it is starting without them so you can choose entries with `/read`.
+Each live message uses one discussion round by default: OpenAI drafts, Gemini reviews, and OpenAI answers, for **three API calls per message**. `chat --rounds 2` uses five calls per message and `--rounds 3` uses seven. Slash commands do not call either API. When a conversation or its references become too large, the app automatically selects recent dialogue and older source passages locally, without an extra model call. It keeps the athlete profile and active PDF guidance available and displays a notice when selection is needed. This is app-managed context selection, not model training or an AI-written summary. Your complete messages and reference entries remain stored and exportable across restarts.
+
+Use `/context` to inspect the current or most recent request's selection status. Selection can miss an older detail: name the relevant topic or entry, or repeat an important constraint in your current message, and the coaches should ask for clarification when context is missing. Keep lasting injuries, goals, and training limits in your athlete profile. You can still use `chat --context-limit 0` to begin a new chat without automatic references, or `/clearrefs` to remove them while chatting, but routine long chats no longer require either command. Clearing references keeps your conversation; information already discussed remains in that dialogue, and your methodology PDF library remains active.
 
 Demo chat replies are static examples. They exercise conversation storage and navigation but do not interpret your message or tailor coaching to your information.
 
@@ -178,7 +181,7 @@ For Ubuntu on Windows, right-click the document in Windows File Explorer, choose
 /file "/mnt/c/Users/YourName/Documents/Week 1.docx"
 ```
 
-Then ask a question, for example: “Review this week's workouts for aerobic capacity and help me pace Monday's intervals.” Both coaches receive the extracted training text alongside your chat and athlete profile.
+Then ask a question, for example: “Review this week's workouts for aerobic capacity and help me pace Monday's intervals.” Both coaches receive the extracted training text or relevant passages from larger references alongside your chat context and athlete profile.
 
 You can also import from the terminal:
 
@@ -262,6 +265,8 @@ Use the output as a planning aid. Explain injuries and current training toleranc
 AI-generated plans do not guarantee competition qualification or performance. CrossFit Open and Quarterfinals rules can change. The coaches should flag rules that need verification instead of inventing eligibility or year-specific thresholds. The app does not browse for current rules: check the official rules, movement standards, division requirements, and schedule yourself, and include them in the request when relevant.
 
 ## Check and troubleshoot
+
+Version `0.5.0` handles long chats and large saved references with automatic local context selection. If an older version reports that the chat and references are too large, update using the commands below, then resume the same saved chat. Your full history, reference IDs, and PDF library remain available. Use `/context` to inspect selection status.
 
 If `/file` is unknown or the menu does not show **9 — Import training file**, exit the app completely and update from your `gamesCoach` checkout:
 
