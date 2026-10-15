@@ -139,6 +139,9 @@ New chats load your saved athlete profile and the five most recent entries from 
 | `/profile` | Show your saved athlete profile |
 | `/read ID` | Add a specific saved entry to the coaching context |
 | `/file [PATH]` | Import a training file; prompts for its path when omitted |
+| `/learn [PATH]` | Add a methodology PDF to the persistent coaching library |
+| `/library` | List your saved methodology guides |
+| `/sources` | Inspect the methodology passages selected for the latest chat question |
 | `/clearrefs` | Remove loaded entry references while retaining the current conversation |
 | `/new` | Start a fresh conversation while retaining the profile and selected references |
 
@@ -189,6 +192,36 @@ Supported formats are **`.docx`, `.txt`, and `.md`**. Word's main document parag
 Importing makes **no API requests** and does not modify the original file. Only the extracted text is saved locally and sent to both providers when you ask a live coaching question; the original Word file and full directory path are not uploaded. Include only the training material you want to share, without API keys or other secrets. Word files and the optional `.training-files/` folder are ignored by Git; keep personal text/Markdown training files outside the checkout or in that ignored folder.
 
 Imported documents appear in history, and new chats include recent entries automatically. `/file` adds the document to the current chat and saves that reference immediately if the conversation already exists. Resume the conversation to keep using it without locating the file again, or use `/read ID` to load any previously imported document. Edits to the original file require importing it again; existing imported copies are preserved.
+
+## Give the coaches methodology PDFs
+
+Version **0.3.0** adds a persistent coaching library. Choose **10 — Methodology PDF library** in the menu, or type `/learn` in chat and paste the document's path when prompted. Repeat for your second PDF. Windows **Copy as path** works here too:
+
+```text
+/learn "C:\Users\YourName\Downloads\CrossFit Methodology.pdf"
+/learn "C:\Users\YourName\Downloads\Competitor Methodology.pdf"
+/library
+```
+
+Or add them from your Ubuntu terminal:
+
+```bash
+uv run gamescoach library add "/mnt/c/Users/YourName/Downloads/CrossFit Methodology.pdf"
+uv run gamescoach library add "/mnt/c/Users/YourName/Downloads/Competitor Methodology.pdf"
+uv run gamescoach library list
+```
+
+Adding a guide extracts and saves its text locally, without sending it to an AI or making paid API requests. Guides remain available across app restarts, new chats, resumed chats, `/new`, and `/clearrefs`. They are separate from the five recent menu entries. Both coaches receive methodology references during **live chats and all four plan types**; importing them once is enough on the same computer/data directory. Demo replies remain static and do not apply the guides.
+
+Then ask, for example: “Use my methodology guides to review my weekly training for aerobic capacity and competition readiness. Explain the principles you apply and cite the PDF pages.” Type `/sources` after a chat reply to inspect its selected passages.
+
+The app selects passages using keyword relevance and keeps a foundational passage from each guide. Up to eight passages, totaling at most 16000 serialized characters, are supplied per question. This limits repeated token costs rather than resending entire books. Both models are instructed to cite `[filename, PDF p. N]`, distinguish source guidance from athlete-specific adjustments, and respect recovery, limitations and CrossFit scope. PDF page numbers refer to physical PDF pages, which may differ from printed page numbers.
+
+This is **reference retrieval, not retraining**: neither model permanently learns the books, and selected passages are not a complete reading of each PDF. Retrieval can miss relevant sections; ask a specific question or identify a PDF page when needed. Source passages used for a completed reply are saved with the plan/chat for review. Older competition rules in a guide are not verified current rules.
+
+The library supports up to six text-based PDFs, each up to 25 MB, 600 pages and two million extracted characters. Scanned/image-only guides need OCR first; images and diagrams are not interpreted, and pages without extractable text are reported. Importing the same exact PDF twice does not duplicate it. Edited PDFs become separate entries.
+
+Remove a guide with `uv run gamescoach library remove ID`, using the ID from `library list`. This stops future library lookups for that guide; original PDFs, older conversations and previously saved source excerpts remain intact. The library is unencrypted private local JSON under the app's existing data directory. Only selected text passages and filenames go to both providers during live coaching; original PDFs and their directory paths are not uploaded. Keep API keys out of source documents. PDF files are ignored by Git.
 
 ## Customize the coaching emphasis
 

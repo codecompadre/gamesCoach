@@ -92,6 +92,7 @@ class CoachingSession:
     models: dict[str, str] = field(default_factory=dict)
     messages: list[ChatMessage] = field(default_factory=list)
     context_ids: list[str] = field(default_factory=list)
+    methodology_excerpts: list[dict] = field(default_factory=list)
 
     def __post_init__(self) -> None:
         if not isinstance(self.id, str) or not re.fullmatch(r"[a-f0-9]{12,32}", self.id):
@@ -114,6 +115,15 @@ class CoachingSession:
             raise ValueError("A final plan is required.")
         if type(self.demo) is not bool or not isinstance(self.models, dict) or not all(isinstance(k, str) and isinstance(v, str) for k, v in self.models.items()):
             raise ValueError("Session metadata is invalid.")
+        if not isinstance(self.methodology_excerpts, list) or len(self.methodology_excerpts) > 8:
+            raise ValueError("Methodology references are invalid.")
+        for excerpt in self.methodology_excerpts:
+            if not isinstance(excerpt, dict) or not isinstance(excerpt.get("guide_id"), str) or not re.fullmatch(r"[a-f0-9]{16}", excerpt["guide_id"]):
+                raise ValueError("Methodology reference ID is invalid.")
+            if not isinstance(excerpt.get("filename"), str) or not 1 <= len(excerpt["filename"]) <= 255 or type(excerpt.get("pdf_page")) is not int or not 1 <= excerpt["pdf_page"] <= 600:
+                raise ValueError("Methodology source is invalid.")
+            if not isinstance(excerpt.get("text"), str) or not 1 <= len(excerpt["text"]) <= 1600:
+                raise ValueError("Methodology passage is invalid.")
         if not isinstance(self.messages, list) or not all(isinstance(message, ChatMessage) for message in self.messages):
             raise ValueError("Session chat messages are invalid.")
         if not isinstance(self.context_ids, list) or not all(isinstance(reference, str) and re.fullmatch(r"[a-f0-9]{12,32}", reference) for reference in self.context_ids):

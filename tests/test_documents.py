@@ -267,4 +267,5 @@ def test_file_prompt_handles_eof_and_version_identifies_current_app(console_env)
     assert "Traceback" not in result.stdout + result.stderr
     version = run_cli(console_env, "--version")
     assert version.returncode == 0
-    assert version.stdout.strip() == "gamescoach 0.2.0"
+    from gamescoach import __version__
+    assert version.stdout.strip() == f"gamescoach {__version__}"

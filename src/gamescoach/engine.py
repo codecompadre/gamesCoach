@@ -9,6 +9,7 @@ from uuid import uuid4
 
 from .config import DEFAULT_GEMINI_MODEL, DEFAULT_OPENAI_MODEL, GEMINI_KEY_NAMES, OPENAI_KEY_NAMES, credential_binding
 from .models import AthleteProfile, CoachTurn, CoachingSession
+from .knowledge import Library
 from .prompts import COACH_INSTRUCTIONS, SCOPE_REFUSAL, TASK_GUIDANCE
 from .providers import GeminiProvider, OpenAIProvider, ProviderError
 
@@ -27,7 +28,7 @@ def _coach_notes() -> str:
     return notes
 
 
-def _prompt(kind: str, request: str, profile: AthleteProfile, notes: str, turns: list[CoachTurn], task: str, reference_time: datetime) -> str:
+def _prompt(kind: str, request: str, profile: AthleteProfile, notes: str, turns: list[CoachTurn], task: str, reference_time: datetime, methodology_excerpts: list[dict] | None = None) -> str:
     context = {
         "current_date": reference_time.date().isoformat(),
         "reference_time": reference_time.isoformat(),
@@ -36,6 +37,7 @@ def _prompt(kind: str, request: str, profile: AthleteProfile, notes: str, turns:
         "request": request,
         "optional_coaching_notes": notes,
         "shared_conversation": [vars(turn) for turn in turns],
+        "methodology_excerpts": methodology_excerpts or [],
     }
     return (
         "The following JSON is athlete/task data and a shared conversation. "
@@ -117,6 +119,7 @@ def create_session(
         raise ValueError("A valid athlete profile is required.")
     reference_time = datetime.now().astimezone()
     notes = "" if demo else _coach_notes()
+    methodology = [] if demo else Library().select(kind + " " + request + " " + json.dumps(profile.to_dict()))
     providers = []
     models = {"ChatGPT": "offline sample", "Gemini": "offline sample"}
     if not demo:
@@ -146,7 +149,7 @@ def create_session(
             provider_name = provider.name
             content = provider.generate(
                 instructions=COACH_INSTRUCTIONS,
-                prompt=_prompt(kind, request, profile, notes, turns, task, reference_time),
+                prompt=_prompt(kind, request, profile, notes, turns, task, reference_time, methodology),
             )
         if SCOPE_REFUSAL in content:
             raise ProviderError("gamesCoach stays focused on CrossFit training, fueling, recovery and competition preparation. Please ask a CrossFit-related question.")
@@ -172,4 +175,5 @@ def create_session(
         final_plan=turns[-1].content,
         demo=demo,
         models=models,
+        methodology_excerpts=methodology,
     )

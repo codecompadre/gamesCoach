@@ -20,6 +20,7 @@ from rich.text import Text
 from gamescoach import __version__
 from gamescoach.chat import ChatCoach, ChatContextError
 from gamescoach.documents import import_document
+from gamescoach.knowledge import Library
 from gamescoach.config import DEFAULT_GEMINI_MODEL, DEFAULT_OPENAI_MODEL, GEMINI_KEY_NAMES, OPENAI_KEY_NAMES, credential_binding
 from gamescoach.engine import create_session
 from gamescoach.models import AthleteProfile, CoachingSession, CoachTurn
@@ -110,6 +111,13 @@ def _parser() -> argparse.ArgumentParser:
 
     document = commands.add_parser("import-file", help="read and save a local Word, text or Markdown training file")
     document.add_argument("path", help="path to a .docx, .txt or .md file (Windows paths work in Ubuntu/WSL)")
+    library = commands.add_parser("library", help="manage persistent methodology PDF references")
+    library_commands = library.add_subparsers(dest="library_command")
+    add_guide = library_commands.add_parser("add", help="index a text-based methodology PDF locally")
+    add_guide.add_argument("path")
+    library_commands.add_parser("list", help="show saved methodology guides")
+    remove_guide = library_commands.add_parser("remove", help="remove a guide from future library lookups")
+    remove_guide.add_argument("id")
 
     show = commands.add_parser("show", help="read a saved plan or complete chat")
     show.add_argument("id", help="saved session ID")
@@ -400,6 +408,9 @@ def _chat_help(console: Console, *, from_menu: bool) -> None:
     console.print("/read ID  Read and add a saved entry to coaching context    /new  Start a fresh conversation")
     console.print("/file [PATH]  Import a Word .docx, text or Markdown training file (prompts for a path if omitted)")
     console.print("/clearrefs  Remove saved entries from coaching context; your profile and current chat remain")
+    console.print("/learn [PATH]  Add a methodology PDF to the persistent coaching library")
+    console.print("/library  List methodology guides    /sources  Show selected methodology passages for this chat")
+    console.print("The methodology library remains active across /new and /clearrefs; remove guides with library remove ID from the terminal.")
 
 
 def _chat_context(console: Console, context: list[CoachingSession]) -> None:
@@ -503,6 +514,25 @@ def _chat(
                     _history(console, store)
                 elif name == "profile" and not argument:
                     _show_profile(console, store.load_profile())
+                elif name == "library" and not argument:
+                    _show_library(console)
+                elif name == "sources" and not argument:
+                    if not coach.methodology_excerpts:
+                        console.print("No methodology passages selected yet. They are retrieved when you send a live coaching question.")
+                    for excerpt in coach.methodology_excerpts:
+                        console.print(Text(f"{excerpt['filename']} · PDF p. {excerpt['pdf_page']}", style="bold cyan"))
+                        console.print(Text(excerpt["text"]))
+                elif name == "learn":
+                    if not argument:
+                        try:
+                            argument = console.input("Methodology PDF path (Enter or /quit to cancel): ").strip()
+                        except (EOFError, KeyboardInterrupt):
+                            console.print("\nPDF import cancelled.")
+                            continue
+                        if not argument or _chat_menu_back(argument):
+                            console.print("PDF import cancelled.")
+                            continue
+                    _add_guide(console, argument)
                 elif name in ("file", "readfile"):
                     if not argument:
                         try:
@@ -586,6 +616,22 @@ def _import_file(console: Console, store: Store, path: str) -> None:
     console.print("Only extracted text is shared with both coaches during live coaching; importing makes no API calls.")
 
 
+def _show_library(console: Console) -> None:
+    guides = Library().list_guides()
+    if not guides:
+        console.print("No methodology guides saved. Use /learn in chat, or library add PATH.")
+    for guide in guides:
+        console.print(Text(f"{guide['id']} · {guide['filename']} · {guide['pages']} PDF pages · {len(guide['passages'])} passages"))
+
+
+def _add_guide(console: Console, path: str) -> None:
+    guide = Library().add(path)
+    console.print(Text(f"Library ready: {guide['filename']} · {guide['pages']} PDF pages · {guide['id']}", style="green"))
+    if guide.get("pages_without_text"):
+        console.print(Text(f"{guide['pages_without_text']} pages contained no extractable text; images and scans are not read.", style="yellow"))
+    console.print("Saved locally without API calls. Both coaches retrieve selected passages for future live chats and plans, including resumed conversations.")
+
+
 def _chat_menu_back(choice: str) -> bool:
     return choice in ("b", "back", "q", "quit", "exit") or _slash_command(choice) in (
         ("quit", ""), ("back", ""), ("exit", ""),
@@ -661,6 +707,7 @@ def _interactive(console: Console, store: Store, *, demo: bool) -> int:
         console.print()
         console.print("[bold]1[/bold] Workout  [bold]2[/bold] Training plan  [bold]3[/bold] Nutrition  [bold]4[/bold] Competition")
         console.print("[bold]5[/bold] Athlete profile  [bold]6[/bold] History  [bold]7[/bold] API configuration  [bold]8[/bold] Chat  [bold]9[/bold] Import training file  [bold]q[/bold] Quit")
+        console.print("[bold]10[/bold] Methodology PDF library")
         try:
             choice = console.input("Choose: ").strip().lower()
         except EOFError:
@@ -689,8 +736,13 @@ def _interactive(console: Console, store: Store, *, demo: bool) -> int:
                 if not path or _chat_menu_back(path):
                     continue
                 _import_file(console, store, path)
+            elif choice in ("10", "library"):
+                _show_library(console)
+                path = console.input("PDF path to add (Enter or /quit to return): ").strip()
+                if path and not _chat_menu_back(path):
+                    _add_guide(console, path)
             elif choice:
-                console.print("Choose 1–9 or q to quit.")
+                console.print("Choose 1–10 or q to quit.")
         except EOFError:
             console.print("\nInput ended. Returning to the shell.")
             return 0
@@ -726,6 +778,14 @@ def main(argv: Sequence[str] | None = None) -> int:
             _history(console, store, args.limit)
         elif args.command == "import-file":
             _import_file(console, store, args.path)
+        elif args.command == "library":
+            if args.library_command == "add":
+                _add_guide(console, args.path)
+            elif args.library_command == "remove":
+                Library().remove(args.id)
+                console.print("Removed from future library lookups. Original PDF and past conversations are preserved.")
+            else:
+                _show_library(console)
         elif args.command == "show":
             _render_session(console, store.get_session(args.id), transcript=args.transcript)
         elif args.command == "export":

@@ -11,4 +11,5 @@ dist/
 coach-notes.local.md
 *.docx
 *.doc
+*.pdf
 .training-files/
