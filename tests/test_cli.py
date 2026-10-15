@@ -65,7 +65,7 @@ def test_demo_plan_history_show_and_export(console_env, tmp_path):
 
     shown = run_cli(console_env, "show", session["id"], "--transcript")
     assert shown.returncode == 0
-    assert "proposal" in shown.stdout and "review" in shown.stdout
+    assert "ChatGPT · Draft" in shown.stdout and "Gemini · Review" in shown.stdout
     assert "ChatGPT" in shown.stdout and "Gemini" in shown.stdout
     assert "CrossFit" in shown.stdout
 

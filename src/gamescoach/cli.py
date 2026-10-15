@@ -8,11 +8,13 @@ from datetime import date
 import json
 import os
 from pathlib import Path
+import shutil
+import subprocess
 from typing import Sequence
 
 from rich.console import Console
-from rich.markdown import Markdown
 from rich.markup import escape
+from rich.pager import Pager
 from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
@@ -26,6 +28,7 @@ from gamescoach.config import DEFAULT_GEMINI_MODEL, DEFAULT_OPENAI_MODEL, GEMINI
 from gamescoach.engine import create_session
 from gamescoach.models import AthleteProfile, CoachingSession, CoachTurn
 from gamescoach.providers import GeminiProvider, OpenAIProvider, ProviderError
+from gamescoach.rendering import render_coach
 from gamescoach.storage import Store, StoreError
 
 
@@ -138,19 +141,25 @@ def _parser() -> argparse.ArgumentParser:
 
 
 def _render_turn(console: Console, turn: CoachTurn) -> None:
-    console.print()
-    console.print(Text(f"{turn.provider} · {turn.stage}", style="bold cyan"))
-    console.print(Markdown(turn.content))
+    # The final answer is rendered below the discussion, once, for the athlete.
+    if turn.stage in ("synthesis", "chat-answer"):
+        return
+    label = {
+        "proposal": "Draft", "chat-proposal": "Draft",
+        "review": "Review", "chat-review": "Review",
+        "refinement": "Refinement", "chat-refinement": "Refinement",
+    }.get(turn.stage, turn.stage)
+    render_coach(console, turn.content, title=f"{turn.provider} · {label}", discussion=True, provider=turn.provider)
 
 
 def _render_chat_messages(console: Console, session: CoachingSession) -> None:
     for message in session.messages:
         console.print()
-        console.print(Text("You" if message.role == "user" else "Coach", style="bold cyan" if message.role == "user" else "bold green"))
         if message.role == "user":
+            console.print(Text("You", style="bold cyan"))
             console.print(Text(message.content))
         else:
-            console.print(Markdown(message.content))
+            render_coach(console, message.content)
 
 
 def _render_session(console: Console, session: CoachingSession, *, transcript: bool = False, saved: bool = True) -> None:
@@ -166,8 +175,7 @@ def _render_session(console: Console, session: CoachingSession, *, transcript: b
         console.print(Text(session.final_plan))
     else:
         console.print()
-        console.print(Text(KIND_LABELS.get(session.kind, session.kind), style="bold green"))
-        console.print(Markdown(session.final_plan))
+        render_coach(console, session.final_plan, title=KIND_LABELS.get(session.kind, session.kind))
     console.print()
     if saved:
         console.print(Text(f"Saved session: {session.id}", style="dim"))
@@ -409,6 +417,7 @@ def _chat_help(console: Console, *, from_menu: bool) -> None:
     destination = "return to the menu" if from_menu else "return to the shell"
     console.print(f"Type a CrossFit coaching question. /quit (or / quit), /back, and /exit {destination}.")
     console.print("/help  Show commands    /history  List saved plans and chats    /profile  Read your saved profile")
+    console.print("/view  Reopen the latest coach reply; scroll with arrows/Page Up/Down and q returns to chat")
     console.print("/read ID  Read and add a saved entry to coaching context    /new  Start a fresh conversation")
     console.print("/file [PATH]  Import a Word .docx, text or Markdown training file (prompts for a path if omitted)")
     console.print("/clearrefs  Remove saved entries from coaching context; your profile and current chat remain")
@@ -447,6 +456,48 @@ def _show_chat_context(console: Console, coach: ChatCoach) -> None:
         if ready["guides"]:
             console.print("The methodology brief and relevant PDF passages remain active during context selection. Use /sources to inspect them.")
     console.print("Context selection runs locally without extra API calls; show or export the chat to read its complete history.")
+
+
+class _ReplyPager(Pager):
+    def __init__(self) -> None:
+        self.interrupted = False
+        self.error: OSError | None = None
+
+    def show(self, content: str) -> None:
+        # An argument list avoids interpreting reply text or environment values
+        # as shell commands. The answer is piped to less, never written to disk.
+        # Rich restores its output buffer after show returns, so handle pager
+        # failures here rather than letting them leave that buffer suspended.
+        try:
+            subprocess.run(["less", "-R", "-X"], input=content, text=True, check=False)
+        except KeyboardInterrupt:
+            self.interrupted = True
+        except OSError as exc:
+            self.error = exc
+
+
+def _view_reply(console: Console, coach: ChatCoach) -> None:
+    if coach.session is None:
+        console.print("No coach reply yet. Ask a CrossFit question first.")
+        return
+    if console.is_terminal and shutil.which("less"):
+        console.print("Reply viewer: arrows or Page Up/Down to scroll; q returns to chat.")
+        pager = _ReplyPager()
+        try:
+            with console.pager(pager=pager, styles=not console.no_color):
+                render_coach(console, coach.session.final_plan)
+        except KeyboardInterrupt:
+            console.print("\nReturned to chat.")
+        else:
+            if pager.error is not None:
+                console.print("Could not open the scrollable viewer. Displaying the reply below.")
+                render_coach(console, coach.session.final_plan)
+            elif pager.interrupted:
+                console.print("\nReturned to chat.")
+    else:
+        if console.is_terminal:
+            console.print("Displaying the reply below. Install 'less' to use the scrollable viewer.")
+        render_coach(console, coach.session.final_plan)
 
 
 def _slash_command(message: str) -> tuple[str, str] | None:
@@ -540,6 +591,8 @@ def _chat(
                     _show_library(console)
                 elif name == "context" and not argument:
                     _show_chat_context(console, coach)
+                elif name == "view" and not argument:
+                    _view_reply(console, coach)
                 elif name == "sources" and not argument:
                     coach.methodology_brief = [] if demo else Library().brief()
                     sources = (
@@ -634,8 +687,7 @@ def _chat(
         if coach.context_notice and not context_notice_shown:
             console.print(Text(coach.context_notice, style="dim"))
         context_notice_shown = bool(coach.context_report)
-        console.print(Text("Coach", style="bold green"))
-        console.print(Markdown(completed.final_plan))
+        render_coach(console, completed.final_plan)
         try:
             store.save_chat(completed)
         except StoreError as exc:
@@ -807,7 +859,7 @@ def _interactive(console: Console, store: Store, *, demo: bool) -> int:
             if choice in ("1", "2", "3", "4"):
                 kind = tuple(DEFAULT_REQUESTS)[int(choice) - 1]
                 request = _prompt_value(console, "What would you like to create?", DEFAULT_REQUESTS[kind], optional=False)
-                _run_plan(console, store, kind=kind, request=request, demo=demo, show_debate=True)
+                _run_plan(console, store, kind=kind, request=request, demo=demo)
             elif choice in ("5", "profile"):
                 _edit_profile(console, store)
             elif choice in ("6", "history"):

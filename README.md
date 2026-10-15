@@ -114,6 +114,10 @@ uv run gamescoach export ID --output plan.md
 
 Replace `ID` with a saved plan ID from `history`. `--show-debate` shows the discussion when creating a plan; `show ID --transcript` retrieves it later.
 
+Coach replies use a readable layout with section colors: cyan for warm-up and cooldown, magenta for strength and skills, green for conditioning, and yellow for fueling, recovery, and scaling. Answers wrap to at most 100 columns with clear headings, spacing, and a green border. Wide weekly tables use stacked, labeled rows so prescriptions remain fully visible in smaller terminals. Menu plans show the final answer by default; the drafts and reviews remain saved and available through `--show-debate` or `show ID --transcript`. Explicit discussions label ChatGPT drafts in magenta and Gemini reviews in yellow, with the final answer displayed once.
+
+Colors adapt to your terminal. To disable them, launch with `NO_COLOR=1 uv run gamescoach`; headings and section labels remain readable. Saved conversations and Markdown exports retain their original text without terminal color codes.
+
 ## Talk to the coach
 
 Choose **8 — Chat** from the main menu. If you have saved conversations, press **Enter** to continue the most recently saved chat, choose **2** to start a new one, or **3** to pick an older conversation from a numbered list. Use **b** to return to the main menu. With no saved chats, a new conversation starts immediately. Live and demo chats appear separately.
@@ -135,6 +139,7 @@ New chats load your saved athlete profile and the five most recent entries from 
 | `/quit` or `/ quit` | Return to the main menu; exit if launched with `gamescoach chat` |
 | `/back` or `/exit` | Same as `/quit` |
 | `/help` | Show the chat commands |
+| `/view` | Reopen the latest reply in a scrollable viewer; arrows/Page Up/Down scroll, and `q` returns to chat |
 | `/history` | List your saved plans and conversations |
 | `/profile` | Show your saved athlete profile |
 | `/read ID` | Add a specific saved entry to the coaching context |
@@ -145,6 +150,8 @@ New chats load your saved athlete profile and the five most recent entries from 
 | `/context` | Inspect whether context selection is active, available conversation and reference counts, and PDF knowledge status |
 | `/clearrefs` | Remove loaded entry references while retaining the current conversation |
 | `/new` | Start a fresh conversation while retaining the profile and selected references |
+
+For a long reply, `/view` uses the `less` pager when available in an interactive terminal. It makes no AI request. If `less` is unavailable or output is redirected, the reply is displayed again in the normal readable layout.
 
 Completed exchanges are saved locally under one conversation ID. Returning to the menu does not delete them. Review, export, or resume a conversation:
 

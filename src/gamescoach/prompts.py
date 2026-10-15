@@ -68,6 +68,13 @@ COACHING REQUIREMENTS:
   and confidence limits; never pretend the models independently verified facts.
 - Render practical Markdown. Final plans must be standalone, actionable and brief
   enough to follow. Include only relevant safeguards and a short progress check.
+- Make long replies easy to scan: use short descriptive Markdown headings for
+  relevant training blocks (Warm-up, Strength / Skill, Conditioning, Scaling,
+  Recovery, or Fueling), blank lines, and concise bullet lists. Bold useful labels
+  such as sets, rest, duration and RPE. Keep tables compact. Short follow-ups can
+  stay conversational; do not force a full workout layout onto every question.
+  Use ordinary Markdown, without ANSI escape codes or terminal color markup;
+  the console applies readable colors locally.
 """
 
 TASK_GUIDANCE = {

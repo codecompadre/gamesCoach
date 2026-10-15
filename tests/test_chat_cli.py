@@ -79,7 +79,7 @@ def test_chat_two_messages_update_one_saved_thread_and_hide_debate(chat_env):
     assert saved["messages"][-1]["content"] == saved["final_plan"]
     assert len(saved["turns"]) == 6
     assert result.stdout.count("Saved chat:") == 2
-    assert "chat-proposal" not in result.stdout and "chat-review" not in result.stdout
+    assert "ChatGPT · Draft" not in result.stdout and "Gemini · Review" not in result.stdout
     assert "static sample" in result.stdout.lower()
 
 
@@ -88,8 +88,8 @@ def test_chat_global_demo_and_optional_debate_rounds(chat_env):
     assert result.returncode == 0, result.stdout + result.stderr
     saved, = sessions(chat_env)
     assert len(saved["turns"]) == 5
-    assert "chat-proposal" in result.stdout
-    assert "chat-review" in result.stdout and "chat-refinement" in result.stdout
+    assert "ChatGPT · Draft" in result.stdout
+    assert "Gemini · Review" in result.stdout and "ChatGPT · Refinement" in result.stdout
 
 
 def test_chat_loads_profile_latest_five_and_read_adds_older_entry(chat_env):
@@ -135,7 +135,7 @@ def test_resume_and_show_export_include_every_user_and_coach_message(chat_env, t
 
     shown = run_cli(chat_env, "show", saved["id"], "--transcript")
     assert shown.returncode == 0
-    assert "chat-proposal" in shown.stdout and "chat-review" in shown.stdout
+    assert "ChatGPT · Draft" in shown.stdout and "Gemini · Review" in shown.stdout
     for question in ("CrossFit aerobic capacity", "How should I progress?", "Can I retest next month?"):
         assert question in shown.stdout
     destination = tmp_path / "chat.md"
@@ -258,7 +258,7 @@ def test_storage_failure_still_displays_answers_and_retains_in_memory(monkeypatc
     cli._chat(console, store, demo=True)
     assert len(captured) == 2 and len(captured[-1].messages) == 4
     assert output.getvalue().count("This reply is unsaved") == 2
-    assert output.getvalue().count("Coach\n") == 2
+    assert output.getvalue().count("╭─ Coach ") == 2
     assert "Saved chat:" not in output.getvalue()
 
 
