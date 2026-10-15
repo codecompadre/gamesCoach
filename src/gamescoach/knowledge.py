@@ -28,6 +28,9 @@ MAX_CONTEXT_CHARS = 16000
 MAX_BRIEF_CHARS = 8000
 BRIEF_PASSAGE_CHARS = 900
 CACHE_VERSION = 1
+# Increment when extraction support changes enough to require reading source
+# PDFs again. Derived retrieval caches have a separate version above.
+PDF_EXTRACTION_VERSION = 1
 MAX_CACHE_BYTES = 64 * 1024 * 1024
 # A few libraries can be active in one process (for example, isolated tests).
 _PREPARED = OrderedDict()
@@ -46,6 +49,12 @@ FOUNDATION = "methodology constantly varied functional movement intensity mechan
 
 class KnowledgeError(ValueError):
     """A library error that never includes source document contents."""
+
+
+def has_current_extraction(guide: dict) -> bool:
+    """Legacy indexes can be refreshed without downgrading a newer extractor."""
+    version = guide.get("extraction_version")
+    return type(version) is int and version >= PDF_EXTRACTION_VERSION
 
 
 def _terms(text: str) -> set[str]:
@@ -336,10 +345,10 @@ class Library:
             raise KnowledgeError("PDF guides must be at most 25 MB. Import a smaller text-based copy.")
         identifier = hashlib.sha256(data).hexdigest()[:16]
         existing = self.list_guides()
-        for guide in existing:
-            if guide["id"] == identifier:
-                return guide
-        if len(existing) >= MAX_GUIDES:
+        previous = next((guide for guide in existing if guide["id"] == identifier), None)
+        if previous is not None and has_current_extraction(previous):
+            return previous
+        if previous is None and len(existing) >= MAX_GUIDES:
             raise KnowledgeError("The coaching library supports six guides. Remove an unused guide first.")
         try:
             reader = PdfReader(BytesIO(data), strict=False)
@@ -372,6 +381,7 @@ class Library:
             "pages": page_count,
             "pages_without_text": empty_pages,
             "passages": passages,
+            "extraction_version": PDF_EXTRACTION_VERSION,
         }
         temporary = None
         try:

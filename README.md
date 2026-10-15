@@ -274,6 +274,8 @@ uv run gamescoach
 
 Version `0.2.0` includes the file-path prompt and version display. An already running app keeps its previously loaded code until restarted. Use `uv run gamescoach` from this checkout to launch its local installation, rather than an older globally installed command. Inside chat, `/help` lists the supported slash commands, including `/file [PATH]`.
 
+If PDF import warns that `fontTools is required` for a CFF Type1 font, the import completed with a fallback font mapping, which may affect extracted characters. Version `0.4.1` includes pypdf's font support. Update with the commands above and restart the app: PDFs already imported from your watched folder are re-extracted once with the improved parser, then cached normally. For a guide added individually, use `library add PATH` or `/learn PATH` again with its original PDF. Reprocessing keeps the same guide ID and does not duplicate it or call either AI provider.
+
 ```bash
 uv run gamescoach doctor
 uv run gamescoach doctor --check-api

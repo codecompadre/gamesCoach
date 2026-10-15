@@ -1,3 +1,3 @@
 """A personal CrossFit coaching console powered by ChatGPT and Gemini."""
 
-__version__ = "0.4.0"
+__version__ = "0.4.1"

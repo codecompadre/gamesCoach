@@ -7,7 +7,7 @@ import re
 import tempfile
 
 from .documents import DocumentError, document_path
-from .knowledge import KnowledgeError, Library, MAX_GUIDES
+from .knowledge import KnowledgeError, Library, MAX_GUIDES, has_current_extraction
 
 _VERSION = 1
 _MAX_CONFIG_BYTES = 32768
@@ -90,7 +90,8 @@ def _sync(library: Library, config: dict, *, force: bool = False) -> dict:
     previous = config["files"]
     current = {}
     imported = unchanged = 0
-    existing_ids = {guide["id"] for guide in library.list_guides()}
+    existing = {guide["id"]: guide for guide in library.list_guides()}
+    existing_ids = set(existing)
     added_ids = set()
     try:
         for path in files:
@@ -99,13 +100,17 @@ def _sync(library: Library, config: dict, *, force: bool = False) -> dict:
             except OSError:
                 raise KnowledgeError("Cannot inspect a PDF in the registered folder. Check its local permissions; previously imported knowledge is retained.") from None
             old = previous.get(path.name)
-            if not force and old is not None and old["size"] == info.st_size and old["mtime_ns"] == info.st_mtime_ns:
+            saved_guide = existing.get(old["guide_id"]) if old is not None else None
+            unchanged_source = old is not None and old["size"] == info.st_size and old["mtime_ns"] == info.st_mtime_ns
+            needs_refresh = saved_guide is not None and not has_current_extraction(saved_guide)
+            if not force and unchanged_source and not needs_refresh:
                 # Missing indexes may have been explicitly removed by the athlete.
                 # Respect that choice until the source changes or is re-registered.
                 current[path.name] = old
                 unchanged += 1
                 continue
             guide = library.add(path)
+            existing[guide["id"]] = guide
             if guide["id"] not in existing_ids:
                 added_ids.add(guide["id"])
             current[path.name] = {"size": info.st_size, "mtime_ns": info.st_mtime_ns, "guide_id": guide["id"]}
@@ -150,7 +155,7 @@ def configure_folder(value: str | Path) -> dict:
 
 
 def sync_folder() -> dict | None:
-    """Import new/changed PDFs; do not reopen unchanged source files."""
+    """Import changed PDFs and refresh legacy extraction once after an upgrade."""
     library = Library()
     config = _read_config(library)
     return None if config is None else _sync(library, config)
