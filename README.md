@@ -141,7 +141,7 @@ New chats load your saved athlete profile and the five most recent entries from 
 | `/file [PATH]` | Import a training file; prompts for its path when omitted |
 | `/learn [PATH]` | Add a methodology PDF to the persistent coaching library |
 | `/library` | List your saved methodology guides |
-| `/sources` | Inspect the methodology passages selected for the latest chat question |
+| `/sources` | Inspect the automatically loaded methodology brief and passages selected for the latest question |
 | `/clearrefs` | Remove loaded entry references while retaining the current conversation |
 | `/new` | Start a fresh conversation while retaining the profile and selected references |
 
@@ -195,7 +195,16 @@ Imported documents appear in history, and new chats include recent entries autom
 
 ## Give the coaches methodology PDFs
 
-Version **0.3.0** adds a persistent coaching library. Choose **10 — Methodology PDF library** in the menu, or type `/learn` in chat and paste the document's path when prompted. Repeat for your second PDF. Windows **Copy as path** works here too:
+Version **0.4.0** prepares retained PDF knowledge automatically at startup and can check a folder for new or changed guides. Register your folder once from the Ubuntu terminal:
+
+```bash
+uv run gamescoach library watch 'C:\Users\YourName\Desktop\CrossFit'
+uv run gamescoach
+```
+
+The equivalent WSL folder path is `/mnt/c/Users/YourName/Desktop/CrossFit`. Windows **Copy as path** works too. The folder must be accessible from the computer running the CLI. You can also choose **10 — Methodology PDF library** in the menu or type `/learn` in chat and paste the folder path. The app imports PDFs directly inside that folder, including `.PDF` files, and checks for new or changed files each time you start the menu, chat, or a plan. It does not scan subfolders. Unchanged files reuse their saved text and prepared index.
+
+To import individual PDFs instead, use `/learn` with each document's path:
 
 ```text
 /learn "C:\Users\YourName\Downloads\CrossFit Methodology.pdf"
@@ -211,17 +220,19 @@ uv run gamescoach library add "/mnt/c/Users/YourName/Downloads/Competitor Method
 uv run gamescoach library list
 ```
 
-Adding a guide extracts and saves its text locally, without sending it to an AI or making paid API requests. Guides remain available across app restarts, new chats, resumed chats, `/new`, and `/clearrefs`. They are separate from the five recent menu entries. Both coaches receive methodology references during **live chats and all four plan types**; importing them once is enough on the same computer/data directory. Demo replies remain static and do not apply the guides.
+Adding a guide extracts and saves its text locally, without sending it to an AI or making paid API requests. The app prepares a searchable index and a compact foundation brief made from cited source passages. On startup, it loads this retained knowledge automatically and shows **CrossFit knowledge ready** with the guide and page counts. Existing imported guides are prepared automatically after updating; you do not need to import them again or tell the coaches to read them.
 
-Then ask, for example: “Use my methodology guides to review my weekly training for aerobic capacity and competition readiness. Explain the principles you apply and cite the PDF pages.” Type `/sources` after a chat reply to inspect its selected passages.
+Both coaches receive the foundation brief automatically on **every live chat question and all four plan types**, alongside passages selected for the question. Ask normally, for example: “How should I improve my aerobic capacity while keeping enough competition skill practice?” The guides remain active across app restarts, new chats, resumed chats, `/new`, and `/clearrefs`, separate from the five recent menu entries. Type `/sources` even before your first live chat message to see the loaded brief; after a reply, it also shows the selected passages. Demo replies remain static and do not apply the guides.
 
-The app selects passages using keyword relevance and keeps a foundational passage from each guide. Up to eight passages, totaling at most 16000 serialized characters, are supplied per question. This limits repeated token costs rather than resending entire books. Both models are instructed to cite `[filename, PDF p. N]`, distinguish source guidance from athlete-specific adjustments, and respect recovery, limitations and CrossFit scope. PDF page numbers refer to physical PDF pages, which may differ from printed page numbers.
+The compiled index and source-grounded brief are saved locally and reused across restarts. Adding or removing a guide refreshes the prepared knowledge; adding a PDF or folder during chat makes it available immediately. Startup makes no AI requests. It checks a configured source folder for changes and reads new or changed PDFs; unchanged PDFs use their retained text. Caching avoids repeating local text preparation on every question; the providers still take time to generate their answers.
 
-This is **reference retrieval, not retraining**: neither model permanently learns the books, and selected passages are not a complete reading of each PDF. Retrieval can miss relevant sections; ask a specific question or identify a PDF page when needed. Source passages used for a completed reply are saved with the plan/chat for review. Older competition rules in a guide are not verified current rules.
+The brief contains up to eight short foundation passages, and question-specific retrieval supplies up to eight passages totaling at most 16000 serialized characters. The app uses keyword relevance to select source material, so each model receives bounded context, not every page of every book. Both models are instructed to apply relevant principles automatically, cite `[filename, PDF p. N]`, distinguish source guidance from athlete-specific adjustments, and respect recovery, limitations and CrossFit scope. PDF page numbers refer to physical PDF pages, which may differ from printed page numbers.
 
-The library supports up to six text-based PDFs, each up to 25 MB, 600 pages and two million extracted characters. Scanned/image-only guides need OCR first; images and diagrams are not interpreted, and pages without extractable text are reported. Importing the same exact PDF twice does not duplicate it. Edited PDFs become separate entries.
+The app retains the knowledge; neither model permanently learns the books or performs a full-book reading at startup. The brief is extracted source text, not an AI-written summary of every page. Selection can miss relevant sections, so a specific topic or PDF page can help. The brief and passages used for a completed reply are saved with the plan/chat for review. Older competition rules in a guide are not verified current rules.
 
-Remove a guide with `uv run gamescoach library remove ID`, using the ID from `library list`. This stops future library lookups for that guide; original PDFs, older conversations and previously saved source excerpts remain intact. The library is unencrypted private local JSON under the app's existing data directory. Only selected text passages and filenames go to both providers during live coaching; original PDFs and their directory paths are not uploaded. Keep API keys out of source documents. PDF files are ignored by Git.
+The library supports up to six text-based PDFs, each up to 25 MB, 600 pages and two million extracted characters. Scanned/image-only guides need OCR first; images and diagrams are not interpreted, and pages without extractable text are reported. Importing the same exact PDF twice does not duplicate it. Individually reimported edited PDFs become separate entries; successfully imported revisions in the watched folder replace their previous library entries. Updating an edition needs a free library slot; if all six are occupied, remove an unused entry first. Deleting a source file keeps its imported knowledge until you remove the library entry.
+
+Use `uv run gamescoach library unwatch` to stop checking the folder while keeping imported knowledge. If the folder is temporarily unavailable, startup warns and continues using previously imported guides. Remove a guide with `uv run gamescoach library remove ID`, using the ID from `library list`. An unchanged watched file stays removed until it changes or you register the folder again. Original PDFs, older conversations and previously saved source excerpts remain intact. The library and its prepared cache are unencrypted private local data under the app's existing data directory. The source folder path stays local. Only the brief, selected text passages and filenames go to both providers during live coaching; original PDFs and their directory paths are not uploaded. Keep API keys out of source documents. PDF files are ignored by Git.
 
 ## Customize the coaching emphasis
 
