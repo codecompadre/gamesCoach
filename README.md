@@ -251,6 +251,8 @@ uv run gamescoach doctor
 
 Profiles, plans, conversations, and model discussions are stored as unencrypted local JSON under `GAMESCOACH_DATA_DIR` when set, otherwise `$XDG_DATA_HOME/gamescoach` or `~/.local/share/gamescoach`. The app creates its data directory and files with private permissions. Exports contain plan text or the full athlete/coach conversation; choose a private destination if they contain personal information.
 
+Keep custom data directories outside the checkout, or use the ignored `.gamescoach/` or `gamescoach-data/` directories. PDF and Word files are ignored regardless of filename capitalization; personal text/Markdown files and exports belong outside the checkout or in `.training-files/`. Git ignore rules do not protect files already committed or added with `git add --force`. Collaborators should configure their own API keys; cloning the repository does not copy your local environment variables or saved training history.
+
 In live mode, your profile, request, any configured coach notes, and shared model critiques are sent to **both OpenAI and Google**. Chat also sends prior messages and the saved entries loaded as references. Local storage does not make those requests offline. Provider handling of API data follows the terms and settings of your accounts. Demo mode sends nothing to either provider. API keys are read from the environment for authentication and are not stored in the conversation files.
 
 ## Training responsibly

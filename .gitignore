@@ -8,8 +8,9 @@ __pycache__/
 dist/
 *.egg-info/
 .gamescoach/
+gamescoach-data/
 coach-notes.local.md
-*.docx
-*.doc
-*.pdf
+*.[dD][oO][cC][xX]
+*.[dD][oO][cC]
+*.[pP][dD][fF]
 .training-files/
