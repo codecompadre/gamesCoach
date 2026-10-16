@@ -142,37 +142,37 @@ def _sync(library: Library, config: dict, *, force: bool = False) -> dict:
     return {"folder": config["folder"], "imported": imported, "unchanged": unchanged, "guides": len(library.list_guides())}
 
 
-def configure_folder(value: str | Path) -> dict:
+def configure_folder(value: str | Path, *, library: Library | None = None) -> dict:
     """Register and import a local PDF folder, accepting Windows/WSL paths."""
     try:
         folder = document_path(value).resolve()
     except (DocumentError, OSError, ValueError, RuntimeError):
         raise KnowledgeError("Enter an accessible PDF folder path. Windows folders in Ubuntu are normally under /mnt/c/.") from None
-    library = Library()
+    library = library if library is not None else Library()
     existing = _read_config(library)
     previous = existing["files"] if existing is not None and existing["folder"] == str(folder) else {}
     return _sync(library, {"version": _VERSION, "folder": str(folder), "files": previous}, force=True)
 
 
-def sync_folder() -> dict | None:
+def sync_folder(*, library: Library | None = None) -> dict | None:
     """Import changed PDFs and refresh legacy extraction once after an upgrade."""
-    library = Library()
+    library = library if library is not None else Library()
     config = _read_config(library)
     return None if config is None else _sync(library, config)
 
 
-def folder_status() -> dict | None:
+def folder_status(*, library: Library | None = None) -> dict | None:
     """Return local registration details without opening the source folder."""
-    library = Library()
+    library = library if library is not None else Library()
     config = _read_config(library)
     if config is None:
         return None
     return {"folder": config["folder"], "files": len(config["files"])}
 
 
-def clear_folder() -> None:
+def clear_folder(*, library: Library | None = None) -> None:
     """Stop automatic importing while retaining all indexed knowledge."""
     try:
-        _config_path(Library()).unlink(missing_ok=True)
+        _config_path(library if library is not None else Library()).unlink(missing_ok=True)
     except OSError:
         raise KnowledgeError("Cannot remove the PDF folder setting. Check its local permissions.") from None

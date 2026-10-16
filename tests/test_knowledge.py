@@ -134,7 +134,7 @@ def test_both_coaches_receive_guidance_after_restart_and_even_without_recent_ref
         result = engine.create_session('training', 'Improve aerobic capacity', AthleteProfile(), rounds=1)
     else:
         result = chat.ChatCoach(AthleteProfile(), []).reply('Improve aerobic capacity')
-    assert [item[0] for item in calls] == ['ChatGPT', 'Gemini', 'ChatGPT']
+    assert [item[0] for item in calls] == ['Gemini', 'ChatGPT', 'Gemini']
     for _, instructions, prompt in calls:
         json_text = prompt.split('\n', 1)[1].split('\nTask focus:', 1)[0].split('\nYour turn:', 1)[0]
         data = json.loads(json_text)

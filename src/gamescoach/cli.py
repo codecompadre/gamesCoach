@@ -27,6 +27,7 @@ from gamescoach.library_sources import clear_folder, configure_folder, folder_st
 from gamescoach.config import DEFAULT_GEMINI_MODEL, DEFAULT_OPENAI_MODEL, GEMINI_KEY_NAMES, OPENAI_KEY_NAMES, credential_binding
 from gamescoach.engine import create_session
 from gamescoach.models import AthleteProfile, CoachingSession, CoachTurn
+from gamescoach.memory import memory_settings, memory_status, reset_memory, save_memory_settings
 from gamescoach.providers import GeminiProvider, OpenAIProvider, ProviderError
 from gamescoach.rendering import render_coach
 from gamescoach.storage import Store, StoreError
@@ -91,6 +92,20 @@ def _parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--version", action="version", version=f"gamescoach {__version__}")
     commands = parser.add_subparsers(dest="command")
+
+    gui = commands.add_parser("gui", help="open the local browser chat interface")
+    gui.add_argument("--demo", dest="gui_demo", action="store_true", help="use offline samples without either API")
+    gui.add_argument("--port", type=_bounded_integer(1, 65535), default=8765, help="local browser port (default: 8765)")
+    gui.add_argument("--no-browser", action="store_true", help="print the address without opening a browser")
+
+    memory = commands.add_parser("memory", help="inspect memory, reset retained data, or change context settings")
+    memory_commands = memory.add_subparsers(dest="memory_command")
+    memory_commands.add_parser("status", help="show what the app retains locally")
+    reset = memory_commands.add_parser("reset", help="erase retained app data after typing RESET")
+    reset.add_argument("--scope", choices=("history", "all"), default="history")
+    settings = memory_commands.add_parser("settings", help="control automatic references and optional coach notes")
+    settings.add_argument("--auto-references", choices=("on", "off"))
+    settings.add_argument("--coach-notes", choices=("on", "off"))
 
     plan = commands.add_parser("plan", help="ask the two coaches to create a plan")
     plan.add_argument("--kind", choices=tuple(DEFAULT_REQUESTS), default="workout")
@@ -199,7 +214,7 @@ def _run_plan(
     else:
         if profile is None:
             console.print("[dim]No athlete profile saved. The coaches will use only your request; run 'gamescoach profile' to add context.[/dim]")
-        console.print("[dim]ChatGPT and Gemini are drafting, reviewing, and refining your plan…[/dim]")
+        console.print("[dim]Gemini is drafting your plan; ChatGPT will review it before Gemini's final response…[/dim]")
     session = create_session(
         kind=kind,
         request=request,
@@ -413,6 +428,36 @@ def _error(console: Console, exc: BaseException) -> None:
     console.print(f"[red]Error:[/red] {escape(str(exc))}", highlight=False)
 
 
+def _memory_status(console: Console, store: Store) -> None:
+    status = memory_status(store)
+    console.print(Text("Local coaching memory", style="bold cyan"))
+    console.print(Text(f"{status['chats']} chats · {status['plans']} plans · {status['documents']} imported training files · {status['guides']} PDF guides"))
+    console.print(Text(f"Athlete profile: {'saved' if status['has_profile'] else 'none'} · PDF folder auto-import: {'on' if status['watched_folder'] else 'off'}"))
+    for name, label in (("auto_references", "Automatic recent-history references in CLI chats"), ("coach_notes", "Optional external coach notes")):
+        console.print(Text(f"{label}: {'on' if status['settings'][name] else 'off'}"))
+    console.print("A new browser chat starts without history references. Profile and active PDF guidance remain available until reset.")
+    console.print("Reset history: gamescoach memory reset --scope history")
+    console.print("Reset all app memory: gamescoach memory reset --scope all")
+
+
+def _reset_memory(console: Console, store: Store, scope: str) -> None:
+    if scope == "all":
+        console.print("[yellow]Erase all chats, saved plans, imported training text, athlete profile, and indexed PDF knowledge. Stop PDF folder auto-import and disable automatic history references and optional coach notes.[/yellow]")
+    else:
+        console.print("[yellow]Erase all chats, saved plans, and imported training text. Keep your athlete profile, PDF knowledge, and memory settings.[/yellow]")
+    console.print("Original documents, PDFs, coach-notes files, and API keys stay in place. Deleted app memory cannot be restored here.")
+    try:
+        confirmation = console.input("Type RESET to erase, or Enter to cancel: ").strip()
+    except (EOFError, KeyboardInterrupt):
+        console.print("\nMemory reset cancelled.")
+        return
+    if confirmation != "RESET":
+        console.print("Memory reset cancelled.")
+        return
+    reset_memory(scope, confirmation, store)
+    console.print("[green]Memory reset complete. Close other running GamesCoach windows before continuing with a fresh chat.[/green]")
+
+
 def _chat_help(console: Console, *, from_menu: bool) -> None:
     destination = "return to the menu" if from_menu else "return to the shell"
     console.print(f"Type a CrossFit coaching question. /quit (or / quit), /back, and /exit {destination}.")
@@ -422,6 +467,7 @@ def _chat_help(console: Console, *, from_menu: bool) -> None:
     console.print("/help  Show commands    /history  List saved plans and chats    /profile  Read your saved profile")
     console.print("/view  Reopen the latest coach reply; scroll with arrows/Page Up/Down and q returns to chat")
     console.print("/read ID  Read and add a saved entry to coaching context    /new  Start a fresh conversation")
+    console.print("/fresh  Start without saved references; keep your profile and PDF guides")
     console.print("/file [PATH]  Import a Word .docx, text or Markdown training file (prompts for a path if omitted)")
     console.print("/clearrefs  Remove saved entries from coaching context; your profile and current chat remain")
     console.print("/learn [PATH]  Add a methodology PDF, or register a folder of PDFs for startup updates")
@@ -549,7 +595,7 @@ def _chat(
                 context.append(store.get_session(context_id))
             except StoreError as exc:
                 console.print(Text(f"Previously loaded context {context_id} is unavailable: {exc}", style="yellow"))
-    if session is None and context_limit:
+    if session is None and context_limit and memory_settings(store)["auto_references"]:
         recent = [entry for entry in store.list_sessions(limit=context_limit + 1) if entry.id != resume][:context_limit]
         known = {entry.id for entry in context}
         context.extend(entry for entry in recent if entry.id not in known)
@@ -670,6 +716,10 @@ def _chat(
                     context_notice_shown = bool(coach.context_report)
                     if coach.context_notice:
                         console.print(Text(coach.context_notice, style="dim"))
+                elif name == "fresh" and not argument:
+                    coach = ChatCoach(profile, [], rounds=rounds, demo=demo)
+                    context_notice_shown = bool(coach.context_report)
+                    console.print("Started a fresh chat without saved references. Your profile and PDF library remain active; earlier chats stay in History.")
                 elif name == "clearrefs" and not argument:
                     coach.clear_context()
                     console.print("Removed saved entries from coaching context. Your athlete profile and current conversation are still loaded.")
@@ -682,7 +732,7 @@ def _chat(
 
         try:
             if not demo:
-                console.print("[dim]ChatGPT and Gemini are drafting and reviewing your plan…[/dim]" if plan_kind else "[dim]ChatGPT and Gemini are reviewing your question…[/dim]")
+                console.print("[dim]Gemini is drafting; ChatGPT will review before Gemini's final reply…[/dim]")
             plan_options = {"plan_kind": plan_kind} if plan_kind else {}
             completed = coach.reply(
                 message,
@@ -878,6 +928,7 @@ def _interactive(console: Console, store: Store, *, demo: bool) -> int:
         console.print("[bold]4[/bold] Import training file")
         console.print("[bold]5[/bold] Methodology PDF library")
         console.print("[bold]6[/bold] Settings / API configuration")
+        console.print("[bold]7[/bold] Browser chat (GUI)")
         console.print("[bold]q[/bold] Quit")
         try:
             choice = console.input("Choose [1]: ").strip().lower()
@@ -908,8 +959,12 @@ def _interactive(console: Console, store: Store, *, demo: bool) -> int:
                     _add_guide(console, path)
             elif choice in ("6", "settings", "doctor"):
                 _doctor(console)
+                _memory_status(console, store)
+            elif choice in ("7", "gui", "browser"):
+                from gamescoach.web import run_gui
+                run_gui(demo=demo)
             else:
-                console.print("Choose 1–6, press Enter for chat, or q to quit.")
+                console.print("Choose 1–7, press Enter for chat, or q to quit.")
         except EOFError:
             console.print("\nInput ended. Returning to the shell.")
             return 0
@@ -926,6 +981,24 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.command == "doctor":
             return _doctor(console, check_api=args.check_api)
         store = Store()
+        if args.command == "gui":
+            from gamescoach.web import run_gui
+            run_gui(demo=args.demo or args.gui_demo, port=args.port, open_browser=not args.no_browser)
+            return 0
+        if args.command == "memory":
+            if args.memory_command == "reset":
+                _reset_memory(console, store, args.scope)
+            elif args.memory_command == "settings":
+                settings = memory_settings(store)
+                if args.auto_references is not None:
+                    settings["auto_references"] = args.auto_references == "on"
+                if args.coach_notes is not None:
+                    settings["coach_notes"] = args.coach_notes == "on"
+                save_memory_settings(settings, store)
+                _memory_status(console, store)
+            else:
+                _memory_status(console, store)
+            return 0
         if args.command is None:
             return _interactive(console, store, demo=args.demo)
         if args.command == "plan":

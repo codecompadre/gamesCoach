@@ -76,7 +76,7 @@ def test_both_coaches_receive_every_earlier_athlete_message_reply_and_saved_menu
     second = coach.reply("I only have four training days next week.", on_turn=observed.append)
     third = coach.reply("And how do those days fit with the nutrition goal?", on_turn=observed.append)
 
-    assert [call[0] for call in calls] == ["ChatGPT", "Gemini", "ChatGPT"] * 3
+    assert [call[0] for call in calls] == ["Gemini", "ChatGPT", "Gemini"] * 3
     for index, (_, instructions, prompt) in enumerate(calls):
         data = prompt_data(prompt)
         reply_number = index // 3
@@ -99,15 +99,38 @@ def test_both_coaches_receive_every_earlier_athlete_message_reply_and_saved_menu
     assert third.id == second.id == first.id
     assert third.created_at == second.created_at == first.created_at
     assert third.request == first.request
-    assert third.final_plan == "ChatGPT coaching reply 9"
+    assert third.final_plan == "Gemini coaching reply 9"
     assert len(third.messages) == 6 and len(third.turns) == 9
     assert first.to_dict() == first_before
     assert observed == third.turns
     assert third.models == {"ChatGPT": "configured-openai", "Gemini": "configured-gemini"}
     assert third.context_ids == [entry.id for entry in entries]
-    assert initialized[0] == ("ChatGPT", "test-openai", "configured-openai")
+    assert initialized[0] == ("Gemini", "test-gemini", "configured-gemini")
+    assert initialized[1] == ("ChatGPT", "test-openai", "configured-openai")
     assert "test-openai" not in json.dumps(third.to_dict())
     assert "test-gemini" not in json.dumps(third.to_dict())
+
+
+@pytest.mark.parametrize("plan_kind", [None, "workout", "training", "nutrition", "competition"])
+def test_gemini_leads_chatgpt_reviews_and_gemini_answers_without_extra_calls(monkeypatch, plan_kind):
+    keys(monkeypatch)
+    calls, _ = fake_coaches(monkeypatch, [
+        "Gemini draft: choose repeatable CrossFit aerobic intervals.",
+        "ChatGPT critique: keep transitions inside the athlete's time budget.",
+        "Gemini final: include transitions and target conversational effort.",
+    ])
+    coach = chat.ChatCoach(AthleteProfile(), [])
+    result = coach.reply("Help me with CrossFit aerobic work in 30 minutes.", plan_kind=plan_kind)
+
+    assert [name for name, _, _ in calls] == ["Gemini", "ChatGPT", "Gemini"]
+    assert prompt_data(calls[0][2])["shared_conversation"] == []
+    assert prompt_data(calls[1][2])["shared_conversation"] == [vars(result.turns[0])]
+    assert prompt_data(calls[2][2])["shared_conversation"] == [vars(turn) for turn in result.turns[:2]]
+    assert "lead CrossFit coach" in calls[0][2]
+    assert "Gemini's" in calls[1][2]
+    assert "ChatGPT's useful review" in calls[2][2]
+    assert result.turns[-1].provider == "Gemini"
+    assert result.messages[-1].content == result.final_plan
 
 
 def test_explicit_read_adds_exact_full_entry_to_both_coaches_without_mutating_supplied_list(monkeypatch):
@@ -248,8 +271,8 @@ def test_credential_priority_and_empty_fallback_match_plan_mode(monkeypatch):
     monkeypatch.setenv("GOOGLE_API_KEY", "alternate-google")
     _, initialized = fake_coaches(monkeypatch)
     chat.ChatCoach(AthleteProfile(), []).reply("How should I warm up for CrossFit?")
-    assert initialized[0][1] == "test-openai"
-    assert initialized[1][1] == "primary-gemini"
+    assert initialized[0][1] == "primary-gemini"
+    assert initialized[1][1] == "test-openai"
 
 
 @pytest.mark.parametrize("rounds,count", [(1, 3), (2, 5), (3, 7)])
@@ -268,7 +291,8 @@ def test_demo_is_offline_static_and_keeps_conversation_history(monkeypatch, roun
     assert second.messages[2].content == "My follow-up question."
     assert second.models == {"ChatGPT": "offline sample", "Gemini": "offline sample"}
     assert first.turns[0].stage == "chat-proposal" and first.turns[-1].stage == "chat-answer"
-    assert sum(turn.provider == "Gemini" for turn in first.turns) == rounds
+    assert sum(turn.provider == "Gemini" for turn in first.turns) == rounds + 1
+    assert sum(turn.provider == "ChatGPT" for turn in first.turns) == rounds
 
 
 def test_resume_restores_history_and_keeps_id_timestamp(monkeypatch):

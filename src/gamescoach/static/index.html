@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <meta name="gamescoach-token" content="{{CSRF_TOKEN}}">
+  <meta name="description" content="Your personal CrossFit coaching space, with Gemini and ChatGPT.">
+  <title>gamesCoach · Your training space</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="/styles.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#message-input">Skip to message</a>
+  <div class="app-shell">
+    <button id="sidebar-scrim" class="sidebar-scrim" aria-label="Close navigation" tabindex="-1" hidden></button>
+    <aside class="sidebar" id="sidebar" aria-label="Your coaching workspace">
+      <a class="brand" href="/" aria-label="gamesCoach home">
+        <span class="brand-mark" aria-hidden="true">gc<span>↗</span></span>
+        <span>games<span class="brand-light">Coach</span><small>THE ATHLETE'S WORKSPACE</small></span>
+      </a>
+      <button class="new-chat-button" id="new-chat" type="button" title="New conversation (Ctrl + Shift + O)" data-mutation><span class="icon-slot" data-icon="plus"></span> New conversation</button>
+      <div class="history-heading"><span>YOUR CONVERSATIONS</span><span id="chat-count" class="subtle-count">0</span></div>
+      <label class="search-wrap"><span class="icon-slot" data-icon="search"></span><input id="history-search" type="search" placeholder="Find a conversation" aria-label="Find a conversation" autocomplete="off"></label>
+      <nav class="thread-list" id="thread-list" aria-label="Saved conversations"><p class="sidebar-empty">Your conversations will appear here.</p></nav>
+      <nav class="workspace-tools" aria-label="Coaching tools">
+        <button type="button" id="tool-profile" data-mutation><span class="icon-slot" data-icon="athlete"></span><span>Athlete profile</span></button>
+        <button type="button" id="tool-files" data-mutation><span class="icon-slot" data-icon="folder"></span><span>Saved plans &amp; files</span></button>
+        <button type="button" id="tool-library" data-mutation><span class="icon-slot" data-icon="book"></span><span>PDF knowledge library</span><span id="library-count" class="tool-count">0</span></button>
+        <button type="button" id="tool-settings" data-mutation><span class="icon-slot" data-icon="settings"></span><span>Settings &amp; memory</span></button>
+      </nav>
+      <div class="sidebar-footer"><span class="local-indicator"><span></span> Local &amp; personal</span><span id="version-label"></span></div>
+    </aside>
+    <main class="workspace" id="main-content">
+      <header class="workspace-header">
+        <button class="icon-button mobile-menu" id="mobile-menu" type="button" aria-label="Open navigation" aria-expanded="false" aria-controls="sidebar"><span class="icon-slot" data-icon="menu"></span></button>
+        <div class="conversation-heading"><span class="eyebrow">CROSSFIT ATHLETE COACH</span><h1 id="conversation-title">A fresh starting line</h1></div>
+        <div class="header-end"><span class="provider-badge"><span class="status-dot"></span> Gemini + ChatGPT</span><span id="mode-badge" class="mode-badge" hidden>DEMO</span><button type="button" class="icon-button" id="show-context" aria-label="View the context your coaches use" title="Coaching context" data-mutation><span class="icon-slot" data-icon="layers"></span></button></div>
+      </header>
+      <div id="notice-region" class="notice-region" aria-live="polite" aria-atomic="false"></div>
+      <div class="conversation-scroll" id="conversation-scroll" tabindex="-1">
+        <div class="conversation-content">
+          <section class="welcome" id="welcome" aria-label="Start a conversation">
+            <div class="welcome-emblem" aria-hidden="true"><span class="icon-slot" data-icon="activity"></span></div>
+            <p class="welcome-eyebrow">TRAIN WITH INTENTION.</p>
+            <h2>Two coaches.<br>One stronger athlete.</h2>
+            <p class="welcome-description">A place to work on your engine, refine your skills, and build toward the competition floor. Your CrossFit coaching starts here.</p>
+            <div class="suggestion-grid">
+              <button type="button" class="suggestion" data-prompt="Help me build my aerobic capacity for CrossFit. Start by asking what you need to know about my current training." data-mutation><span class="suggestion-icon" data-icon="activity"></span><span>Build my engine<small>Aerobic capacity that carries over</small></span><span class="suggestion-arrow">↗</span></button>
+              <button type="button" class="suggestion" data-prompt="Help me plan my next week of CrossFit training, balancing strength, skills, conditioning, and recovery." data-mutation><span class="suggestion-icon" data-icon="calendar"></span><span>Plan my training week<small>Find the right balance of work and rest</small></span><span class="suggestion-arrow">↗</span></button>
+              <button type="button" class="suggestion" data-prompt="Help me identify the CrossFit skills and conditioning priorities to work on for my next competition." data-mutation><span class="suggestion-icon" data-icon="flag"></span><span>Prepare to compete<small>Turn weaknesses into training priorities</small></span><span class="suggestion-arrow">↗</span></button>
+              <button type="button" class="suggestion" data-prompt="Help me review my training, fueling, and recovery so I can perform and recover better in CrossFit." data-mutation><span class="suggestion-icon" data-icon="heart"></span><span>Recover &amp; refuel<small>Support the work outside the gym</small></span><span class="suggestion-arrow">↗</span></button>
+            </div>
+            <p class="welcome-context" id="welcome-context">Loading your training space…</p>
+          </section>
+          <div class="message-list" id="message-list" role="log" aria-label="Coaching conversation" aria-live="polite" aria-relevant="additions"></div>
+        </div>
+      </div>
+      <div class="composer-dock">
+        <div class="composer-container">
+          <div class="context-strip"><button type="button" id="references-button" class="context-button" data-mutation><span class="icon-slot" data-icon="layers"></span><span id="references-label">No saved references attached</span></button><span class="library-context" id="library-context"></span></div>
+          <form class="composer" id="composer-form">
+            <label for="message-input" class="sr-only">Message your CrossFit coaches</label>
+            <textarea id="message-input" rows="1" placeholder="Talk training, goals, or what needs work…" autocomplete="off" spellcheck="true"></textarea>
+            <div class="composer-controls"><div class="composer-tools"><button type="button" class="icon-button attach-button" id="attach-file" aria-label="Import or attach a training file" title="Import or attach a file" data-mutation><span class="icon-slot" data-icon="plus"></span></button><label class="plan-select-wrap"><span class="sr-only">Response type</span><select id="plan-kind" data-mutation><option value="">Coach chat</option><option value="workout">Workout</option><option value="training">Training plan</option><option value="nutrition">Nutrition &amp; fueling</option><option value="competition">Competition prep</option></select><span class="select-chevron" aria-hidden="true">⌄</span></label></div><button type="submit" class="send-button" id="send-button" aria-label="Send message" disabled><span class="icon-slot" data-icon="arrow-up"></span></button></div>
+          </form>
+          <div class="composer-caption"><span id="request-caption">Both coaches use your context. Live replies use paid APIs.</span><span class="keyboard-caption">Enter to send · Shift + Enter for a new line</span></div>
+        </div>
+      </div>
+    </main>
+  </div>
+  <dialog class="modal" id="modal" aria-labelledby="modal-title"><div class="modal-header"><div><span class="eyebrow" id="modal-eyebrow">YOUR WORKSPACE</span><h2 id="modal-title"></h2></div><button class="icon-button" id="modal-close" type="button" aria-label="Close dialog"><span class="icon-slot" data-icon="close"></span></button></div><div class="modal-body" id="modal-body"></div></dialog>
+</body>
+</html>

@@ -16,6 +16,7 @@ from .models import AthleteProfile, ChatMessage, CoachTurn, CoachingSession
 from .knowledge import Library
 from .prompts import COACH_INSTRUCTIONS, SCOPE_REFUSAL, TASK_GUIDANCE
 from .providers import GeminiProvider, OpenAIProvider, ProviderError
+from .storage import Store
 
 
 _MAX_MESSAGE_CHARS = 12000
@@ -86,6 +87,8 @@ class ChatCoach:
         rounds: int = 1,
         demo: bool = False,
         session: CoachingSession | None = None,
+        library: Library | None = None,
+        store: Store | None = None,
     ) -> None:
         if not isinstance(profile, AthleteProfile):
             raise ValueError("A valid athlete profile is required.")
@@ -105,9 +108,11 @@ class ChatCoach:
         self.rounds = rounds
         self.demo = demo
         self.session = session
+        self.library = library if library is not None else Library()
+        self.store = store
         self.last_plan: CoachingSession | None = None
         self.methodology_excerpts = deepcopy(session.methodology_excerpts) if session else []
-        self.methodology_brief = [] if demo else Library().brief()
+        self.methodology_brief = [] if demo else self.library.brief()
         self.context_report: dict = {}
         self.context: list[CoachingSession] = []
         # Work on our own list; adding a reference never changes the caller's list.
@@ -282,10 +287,9 @@ class ChatCoach:
         # Earlier athlete-facing replies are already in dialogue. Old drafts and
         # reviews stay in the saved audit trail, not in every new provider call.
         turns: list[CoachTurn] = []
-        notes = "" if self.demo else _coach_notes()
-        library = Library()
-        self.methodology_brief = [] if self.demo else library.brief()
-        self.methodology_excerpts = [] if self.demo else library.select(
+        notes = "" if self.demo else (_coach_notes(store=self.store) if self.store is not None else _coach_notes())
+        self.methodology_brief = [] if self.demo else self.library.brief()
+        self.methodology_excerpts = [] if self.demo else self.library.select(
             message + " " + json.dumps(self.profile.to_dict()) + " " + " ".join(item.content for item in dialogue[-5:])
         )
         # Freeze a bounded view for both coaches while preserving full records.
@@ -296,7 +300,7 @@ class ChatCoach:
         self._prompt(self.context, dialogue, turns, notes, "Respond to the latest athlete message.", reference_time, prepared)
 
         providers = []
-        models = {"ChatGPT": "offline sample", "Gemini": "offline sample"}
+        models = {"Gemini": "offline sample", "ChatGPT": "offline sample"}
         if not self.demo:
             openai_binding = credential_binding(OPENAI_KEY_NAMES)
             gemini_binding = credential_binding(GEMINI_KEY_NAMES)
@@ -308,8 +312,8 @@ class ChatCoach:
             if missing:
                 raise ProviderError("Live coaching needs " + " and ".join(missing) + ". Configure keys securely, or use --demo.")
             providers = [
-                OpenAIProvider(openai_binding[1], os.environ.get("OPENAI_MODEL", DEFAULT_OPENAI_MODEL)),
                 GeminiProvider(gemini_binding[1], os.environ.get("GEMINI_MODEL", DEFAULT_GEMINI_MODEL)),
+                OpenAIProvider(openai_binding[1], os.environ.get("OPENAI_MODEL", DEFAULT_OPENAI_MODEL)),
             ]
             models = {provider.name: provider.model for provider in providers}
 
@@ -319,7 +323,7 @@ class ChatCoach:
                     _demo_content(plan_kind, stage.removeprefix("chat-") if stage != "chat-answer" else "synthesis")
                     if plan_kind is not None else _DEMO_INTRO + _DEMO_CONTENT[stage]
                 )
-                provider_name = ("ChatGPT", "Gemini")[index]
+                provider_name = ("Gemini", "ChatGPT")[index]
             else:
                 provider = providers[index]
                 provider_name = provider.name
@@ -340,28 +344,28 @@ class ChatCoach:
         for index in range(self.rounds):
             if index == 0:
                 task = (
-                    "Propose a complete, actionable CrossFit plan of the requested kind. Use the athlete's latest request, earlier dialogue, profile and relevant saved entries; preserve their constraints and label unknowns."
+                    "As the lead CrossFit coach, analyze the athlete's request and propose a complete, actionable plan of the requested kind. Use their latest request, earlier dialogue, profile and relevant saved entries; preserve their constraints and label unknowns. ChatGPT will review your proposal."
                     if plan_kind is not None else
-                    "Draft a concise coaching reply to the latest athlete message using the earlier dialogue and relevant saved entries. Answer the actual question; greet or ask a focused follow-up as appropriate instead of always producing a full plan."
+                    "As the lead CrossFit coach, analyze the latest athlete message and draft a concise coaching reply using the earlier dialogue and relevant saved entries. Answer the actual question; greet or ask a focused follow-up as appropriate instead of always producing a full plan. ChatGPT will review your proposal."
                 )
                 take_turn(0, "chat-proposal", task)
             else:
                 task = (
-                    "Revise the complete plan using Gemini's critique. Address material assumptions, contradictions, workload, progression and feasibility while preserving the athlete's supplied constraints."
+                    "Revise your complete plan using ChatGPT's critique. Address material assumptions, contradictions, workload, progression and feasibility while preserving the athlete's supplied constraints."
                     if plan_kind is not None else
-                    "Refine the proposed reply using Gemini's specific critique. Keep it natural, directly relevant to the latest message and consistent with the athlete's earlier details."
+                    "Refine your proposed reply using ChatGPT's specific critique. Keep it natural, directly relevant to the latest message and consistent with the athlete's earlier details."
                 )
                 take_turn(0, "chat-refinement", task)
             task = (
-                "Review the complete CrossFit plan against the supplied dialogue, earlier source excerpts, profile, saved entries and task focus. Challenge unsupported assumptions or contradictions; check time, volume, intensity, fueling, recovery and progression as applicable. Suggest specific corrections and preserve justified strengths."
+                "Review Gemini's complete CrossFit plan as an independent coach against the supplied dialogue, earlier source excerpts, profile, saved entries and task focus. Challenge unsupported assumptions or contradictions; check time, volume, intensity, fueling, recovery and progression as applicable. Suggest specific corrections and preserve justified strengths."
                 if plan_kind is not None else
-                "Review the proposed reply against the supplied athlete dialogue, earlier source excerpts, profile and saved entries. Challenge unsupported assumptions or contradictions and suggest specific CrossFit coaching corrections. Do not expand a short conversation into an unnecessary full plan."
+                "Review Gemini's proposed reply as an independent coach against the supplied athlete dialogue, earlier source excerpts, profile and saved entries. Challenge unsupported assumptions or contradictions and suggest specific CrossFit coaching corrections. Do not expand a short conversation into an unnecessary full plan."
             )
             take_turn(1, "chat-review", task)
         task = (
-            "Write the final standalone athlete-facing CrossFit plan of the requested kind using both coaches' useful recommendations. Include actionable details, scaling, relevant assumptions, recovery and a measurable progress check. Resolve useful critiques without exposing the review process. Do not refer the athlete to previous messages or unseen drafts for required plan details."
+            "As the lead coach, write the final standalone athlete-facing CrossFit plan of the requested kind using your proposal and ChatGPT's useful review recommendations. Include actionable details, scaling, relevant assumptions, recovery and a measurable progress check. Resolve useful critiques without exposing the review process. Do not refer the athlete to previous messages or unseen drafts for required plan details."
             if plan_kind is not None else
-            "Write the final athlete-facing reply to the latest message using both coaches' useful recommendations. Answer naturally and concisely, with relevant context or a focused question. Do not expose the review process or refer the athlete to unseen drafts."
+            "As the lead coach, write the final athlete-facing reply to the latest message using your proposal and ChatGPT's useful review recommendations. Answer naturally and concisely, with relevant context or a focused question. Do not expose the review process or refer the athlete to unseen drafts."
         )
         take_turn(0, "chat-answer", task)
         dialogue.append(ChatMessage("assistant", turns[-1].content))

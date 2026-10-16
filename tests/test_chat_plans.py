@@ -91,7 +91,7 @@ def test_plan_uses_both_coaches_and_chat_context_then_roundtrips_as_separate_rec
     plan = coach.last_plan
 
     assert len(calls) == 6
-    assert [item[0] for item in calls[-3:]] == ["ChatGPT", "Gemini", "ChatGPT"]
+    assert [item[0] for item in calls[-3:]] == ["Gemini", "ChatGPT", "Gemini"]
     assert len(observed) == 3
     for _, instructions, prompt in calls[-3:]:
         supplied = data(prompt)
@@ -162,6 +162,45 @@ def test_normal_success_clears_last_plan_without_creating_an_extra_record(monkey
     assert len(calls) == 6
     assert "plan_kind" not in data(calls[-1][2])
     assert "STRUCTURED PLAN REQUEST" not in calls[-1][1]
+
+
+def test_injected_library_is_used_for_initial_context_and_each_reply(monkeypatch):
+    calls = coaches(monkeypatch)
+    source = {
+        "guide_id": "a" * 16, "filename": "Custom CrossFit library.pdf",
+        "pdf_page": 4, "text": "Mechanics, consistency, intensity.",
+    }
+
+    class PreparedLibrary:
+        def __init__(self):
+            self.brief_calls = 0
+            self.queries = []
+
+        def brief(self):
+            self.brief_calls += 1
+            return [dict(source)]
+
+        def select(self, query):
+            self.queries.append(query)
+            return [dict(source)]
+
+    def forbidden_default_library():
+        raise AssertionError("An injected library must not load the default data directory")
+
+    library = PreparedLibrary()
+    monkeypatch.setattr(chat, "Library", forbidden_default_library)
+    coach = chat.ChatCoach(AthleteProfile(), [], library=library)
+    coach.reply("Plan my CrossFit aerobic work.", plan_kind="workout")
+    coach.reply("Explain the progression.")
+
+    assert coach.library is library
+    assert library.brief_calls == 3
+    assert len(library.queries) == 2
+    assert len(calls) == 6
+    for _, _, prompt in calls:
+        supplied = data(prompt)
+        assert supplied["methodology_brief"] == [source]
+        assert supplied["methodology_excerpts"] == [source]
 
 
 @pytest.mark.parametrize("kind", ["", "chat", "document", "taxes", 1, [], {}])

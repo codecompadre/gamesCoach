@@ -50,7 +50,7 @@ def test_both_coaches_receive_all_prior_turns_and_actual_profile(monkeypatch, tm
     profile = AthleteProfile(experience="Competing", limitations="Wrist discomfort", training_days_per_week=4)
     observed = []
     session = engine.create_session("competition", "Improve my aerobic capacity", profile, on_turn=observed.append)
-    assert [call[0] for call in calls] == ["ChatGPT", "Gemini", "ChatGPT", "Gemini", "ChatGPT"]
+    assert [call[0] for call in calls] == ["Gemini", "ChatGPT", "Gemini", "ChatGPT", "Gemini"]
     assert [turn.stage for turn in session.turns] == ["proposal", "review", "refinement", "review", "synthesis"]
     for index, (_, instructions, prompt) in enumerate(calls):
         data = context(prompt)
@@ -62,10 +62,33 @@ def test_both_coaches_receive_all_prior_turns_and_actual_profile(monkeypatch, tm
         assert data["shared_conversation"] == [vars(turn) for turn in session.turns[:index]]
         assert "PERMANENT SCOPE" in instructions
         assert "no browsing" in instructions
-    assert session.final_plan == "ChatGPT answer 5"
+    assert session.final_plan == "Gemini answer 5"
     assert observed == session.turns
     assert session.models["ChatGPT"] == "configured-openai"
-    assert initialized[0][1] == "test-openai"
+    assert initialized[0][1] == "test-gemini"
+    assert initialized[1][1] == "test-openai"
+
+
+@pytest.mark.parametrize("kind", ["workout", "training", "nutrition", "competition"])
+def test_gemini_builds_plan_chatgpt_reviews_and_gemini_resolves_review(monkeypatch, kind):
+    monkeypatch.setenv("OPENAI_API_KEY", "test-openai")
+    monkeypatch.setenv("GEMINI_API_KEY", "test-gemini")
+    calls, _ = fake_coaches(monkeypatch, [
+        "Gemini draft: 5 x 4 minute CrossFit aerobic intervals.",
+        "ChatGPT critique: reduce to 4 intervals to respect the 30 minute budget.",
+        "Gemini final: 4 x 4 minutes, 1 minute easy, with warm-up and cooldown.",
+    ])
+    result = engine.create_session(kind, "CrossFit aerobic work in 30 minutes", AthleteProfile(), rounds=1)
+
+    assert [name for name, _, _ in calls] == ["Gemini", "ChatGPT", "Gemini"]
+    assert context(calls[0][2])["shared_conversation"] == []
+    assert context(calls[1][2])["shared_conversation"] == [vars(result.turns[0])]
+    assert context(calls[2][2])["shared_conversation"] == [vars(turn) for turn in result.turns[:2]]
+    assert "lead CrossFit coach" in calls[0][2]
+    assert "Gemini's full shared plan" in calls[1][2]
+    assert "ChatGPT's useful review" in calls[2][2]
+    assert result.turns[-1].provider == "Gemini"
+    assert result.final_plan == result.turns[-1].content
 
 
 def test_missing_second_key_prevents_any_provider_initialization(monkeypatch):
@@ -82,7 +105,8 @@ def test_live_generation_uses_nonempty_key_fallback(monkeypatch):
     monkeypatch.setenv("GEMINI_API_KEY", "test-gemini")
     _, initialized = fake_coaches(monkeypatch)
     engine.create_session("workout", "CrossFit workout", AthleteProfile(), rounds=1)
-    assert initialized[0][1] == "fallback-openai"
+    assert initialized[0][1] == "test-gemini"
+    assert initialized[1][1] == "fallback-openai"
 
 
 def test_demo_never_constructs_providers_and_is_explicit_static(monkeypatch):
@@ -99,7 +123,8 @@ def test_demo_never_constructs_providers_and_is_explicit_static(monkeypatch):
 def test_bounded_rounds_keep_both_models_involved(rounds, count):
     session = engine.create_session("training", "CrossFit training", AthleteProfile(), rounds=rounds, demo=True)
     assert len(session.turns) == count
-    assert sum(turn.provider == "Gemini" for turn in session.turns) == rounds
+    assert sum(turn.provider == "Gemini" for turn in session.turns) == rounds + 1
+    assert sum(turn.provider == "ChatGPT" for turn in session.turns) == rounds
 
 
 def test_out_of_scope_reply_stops_debate_without_synthesis(monkeypatch):

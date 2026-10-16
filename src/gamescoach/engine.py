@@ -12,9 +12,13 @@ from .models import AthleteProfile, CoachTurn, CoachingSession
 from .knowledge import Library
 from .prompts import COACH_INSTRUCTIONS, SCOPE_REFUSAL, TASK_GUIDANCE
 from .providers import GeminiProvider, OpenAIProvider, ProviderError
+from .storage import Store
 
 
-def _coach_notes() -> str:
+def _coach_notes(*, store: Store | None = None) -> str:
+    from .memory import memory_settings
+    if not memory_settings(store)["coach_notes"]:
+        return ""
     filename = os.environ.get("GAMESCOACH_COACH_NOTES_FILE")
     if not filename:
         return ""
@@ -124,7 +128,7 @@ def create_session(
     brief = [] if demo else library.brief()
     methodology = [] if demo else library.select(kind + " " + request + " " + json.dumps(profile.to_dict()))
     providers = []
-    models = {"ChatGPT": "offline sample", "Gemini": "offline sample"}
+    models = {"Gemini": "offline sample", "ChatGPT": "offline sample"}
     if not demo:
         openai_binding = credential_binding(OPENAI_KEY_NAMES)
         gemini_binding = credential_binding(GEMINI_KEY_NAMES)
@@ -136,8 +140,8 @@ def create_session(
         if missing:
             raise ProviderError("Live coaching needs " + " and ".join(missing) + ". Configure keys securely, or use --demo.")
         providers = [
-            OpenAIProvider(openai_binding[1], os.environ.get("OPENAI_MODEL", DEFAULT_OPENAI_MODEL)),
             GeminiProvider(gemini_binding[1], os.environ.get("GEMINI_MODEL", DEFAULT_GEMINI_MODEL)),
+            OpenAIProvider(openai_binding[1], os.environ.get("OPENAI_MODEL", DEFAULT_OPENAI_MODEL)),
         ]
         models = {provider.name: provider.model for provider in providers}
 
@@ -146,7 +150,7 @@ def create_session(
     def take_turn(index: int, stage: str, task: str) -> None:
         if demo:
             content = _demo_content(kind, stage)
-            provider_name = ("ChatGPT", "Gemini")[index]
+            provider_name = ("Gemini", "ChatGPT")[index]
         else:
             provider = providers[index]
             provider_name = provider.name
@@ -163,11 +167,11 @@ def create_session(
 
     for index in range(rounds):
         if index == 0:
-            take_turn(0, "proposal", "Propose an actionable starting plan for the athlete. Label unknowns and explain the intended CrossFit stimulus.")
+            take_turn(0, "proposal", "As the lead CrossFit coach, analyze the athlete's request and propose an actionable starting plan. Label unknowns and explain the intended CrossFit stimulus. ChatGPT will review your proposal.")
         else:
-            take_turn(0, "refinement", "Revise the plan using the Gemini review. Address each material issue, clarify disagreements, and improve feasibility and progression.")
-        take_turn(1, "review", "Review the full shared plan as a CrossFit coach. Challenge weak assumptions, check time/volume/intensity/fueling, and suggest specific corrections. Keep strengths that are justified.")
-    take_turn(0, "synthesis", "Write the final standalone athlete-facing CrossFit plan using both coaches' recommendations. Resolve useful critiques, state remaining unknowns and tradeoffs, and include a measurable progress check. Do not refer the athlete to previous messages.")
+            take_turn(0, "refinement", "Revise your plan using ChatGPT's review. Address each material issue, clarify disagreements, and improve feasibility and progression.")
+        take_turn(1, "review", "Review Gemini's full shared plan as an independent CrossFit coach. Challenge weak assumptions, check time/volume/intensity/fueling, and suggest specific corrections. Keep strengths that are justified.")
+    take_turn(0, "synthesis", "As the lead coach, write the final standalone athlete-facing CrossFit plan using your proposal and ChatGPT's useful review recommendations. Resolve useful critiques, state remaining unknowns and tradeoffs, and include a measurable progress check. Do not refer the athlete to previous messages.")
     return CoachingSession(
         id=uuid4().hex[:12],
         created_at=reference_time.astimezone(timezone.utc).isoformat(),

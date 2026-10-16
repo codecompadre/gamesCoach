@@ -80,8 +80,8 @@ def test_plan_discussion_labels_both_coaches_and_displays_final_answer_once(monk
     console, output = output_console(monkeypatch)
     cli._run_plan(console, readable_store, kind="workout", request="CrossFit aerobic work", rounds=1, demo=True, show_debate=True)
     shown = output.getvalue()
-    assert "ChatGPT · Draft" in shown
-    assert "Gemini · Review" in shown
+    assert "Gemini · Draft" in shown
+    assert "ChatGPT · Review" in shown
     assert shown.count("Complete final coaching prescription.") == 1
     assert "╭─ CrossFit workout " in shown
 
@@ -98,8 +98,8 @@ def test_chat_discussion_keeps_provider_labels_and_one_final_reply(monkeypatch, 
     console, output = output_console(monkeypatch, ["CrossFit pacing", "/quit"])
     cli._chat(console, readable_store, demo=True, show_debate=True)
     shown = output.getvalue()
-    assert "ChatGPT · Draft" in shown
-    assert "Gemini · Review" in shown
+    assert "Gemini · Draft" in shown
+    assert "ChatGPT · Review" in shown
     assert_readable_reply(shown)
     saved, = readable_store.list_chats(demo=True)
     assert [turn.stage for turn in saved.turns] == ["chat-proposal", "chat-review", "chat-answer"]

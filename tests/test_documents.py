@@ -157,7 +157,7 @@ def test_both_coaches_receive_exact_imported_word_text(monkeypatch, tmp_path):
         monkeypatch.setattr(chat, classname, Coach)
     entry = import_document(word_file(tmp_path / "week.docx"), AthleteProfile())
     result = ChatCoach(AthleteProfile(), [entry]).reply("How should I pace Monday's rower intervals?")
-    assert [name for name, _, _ in calls] == ["ChatGPT", "Gemini", "ChatGPT"]
+    assert [name for name, _, _ in calls] == ["Gemini", "ChatGPT", "Gemini"]
     for _, instructions, prompt in calls:
         context = json.loads(prompt.split("\n", 1)[1].split("\nYour turn:", 1)[0])
         assert context["saved_entries"][0]["kind"] == "document"

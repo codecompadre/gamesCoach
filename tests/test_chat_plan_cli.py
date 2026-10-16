@@ -160,7 +160,7 @@ def test_live_shortcut_keeps_prior_constraints_with_same_three_call_review(monke
     cli._chat(console, store, context_limit=0)
 
     assert len(calls) == 6
-    assert [call[0] for call in calls] == ["ChatGPT", "Gemini", "ChatGPT"] * 2
+    assert [call[0] for call in calls] == ["Gemini", "ChatGPT", "Gemini"] * 2
     for _, _, prompt in calls[-3:]:
         supplied = json.loads(prompt.split("\n", 1)[1].split("\nYour turn:", 1)[0])
         assert supplied["plan_kind"] == "training"

@@ -57,7 +57,7 @@ def test_every_plan_stage_gets_automatic_core_knowledge_without_asking(methodolo
     assert ready["guides"] == 2 and ready["pages"] == 4
     calls = simulated_coaches(monkeypatch, engine)
     result = engine.create_session(kind, "Help me improve my CrossFit performance.", AthleteProfile(), rounds=1)
-    assert [name for name, _, _ in calls] == ["ChatGPT", "Gemini", "ChatGPT"]
+    assert [name for name, _, _ in calls] == ["Gemini", "ChatGPT", "Gemini"]
     assert result.methodology_brief == methodology.brief()
     assert {item["filename"] for item in result.methodology_brief} == {"Methodology.pdf", "Competitors.pdf"}
     for _, instructions, data in calls:
