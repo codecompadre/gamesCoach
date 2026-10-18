@@ -53,7 +53,7 @@ def test_openai_official_endpoint_auth_body_and_multiple_text_parts():
 def test_gemini_official_endpoint_header_body_and_ignores_thought_parts():
     def respond(request):
         assert request.method == "POST"
-        assert str(request.url) == "https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent"
+        assert str(request.url) == "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-pro-preview:generateContent"
         assert not request.url.query
         assert request.headers["x-goog-api-key"] == KEY
         assert json.loads(request.content) == {

@@ -63,7 +63,8 @@ def _request(
         if name == "Gemini":
             raise ProviderError(
                 "Gemini model is unavailable for text generation. "
-                "Try GEMINI_MODEL=gemini-flash-latest, then run gamescoach doctor --check-api."
+                f"Check GEMINI_MODEL (default: {DEFAULT_GEMINI_MODEL}) and your account's model access, "
+                "then run gamescoach doctor --check-api. No fallback model was used."
             )
         raise ProviderError(f"{name} could not find the model. Check the configured model name and access.")
     if response.status_code >= 500:

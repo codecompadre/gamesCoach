@@ -112,25 +112,45 @@ def test_both_coaches_receive_every_earlier_athlete_message_reply_and_saved_menu
 
 
 @pytest.mark.parametrize("plan_kind", [None, "workout", "training", "nutrition", "competition"])
-def test_gemini_leads_chatgpt_reviews_and_gemini_answers_without_extra_calls(monkeypatch, plan_kind):
+@pytest.mark.parametrize("rounds", [1, 2])
+def test_gemini_leads_chatgpt_assists_and_gemini_answers_without_extra_calls(monkeypatch, plan_kind, rounds):
     keys(monkeypatch)
-    calls, _ = fake_coaches(monkeypatch, [
+    calls, initialized = fake_coaches(monkeypatch, [
         "Gemini draft: choose repeatable CrossFit aerobic intervals.",
         "ChatGPT critique: keep transitions inside the athlete's time budget.",
+    ] + [
+        "Gemini refinement: preserve the interval structure and correct the time budget.",
+        "ChatGPT review: the corrected interval schedule fits; keep the conversational effort.",
+    ] * (rounds - 1) + [
         "Gemini final: include transitions and target conversational effort.",
     ])
-    coach = chat.ChatCoach(AthleteProfile(), [])
+    coach = chat.ChatCoach(AthleteProfile(), [], rounds=rounds)
     result = coach.reply("Help me with CrossFit aerobic work in 30 minutes.", plan_kind=plan_kind)
 
-    assert [name for name, _, _ in calls] == ["Gemini", "ChatGPT", "Gemini"]
-    assert prompt_data(calls[0][2])["shared_conversation"] == []
-    assert prompt_data(calls[1][2])["shared_conversation"] == [vars(result.turns[0])]
-    assert prompt_data(calls[2][2])["shared_conversation"] == [vars(turn) for turn in result.turns[:2]]
+    assert [name for name, _, _ in calls] == ["Gemini", "ChatGPT"] * rounds + ["Gemini"]
+    for index, (name, instructions, prompt) in enumerate(calls):
+        assert prompt_data(prompt)["shared_conversation"] == [vars(turn) for turn in result.turns[:index]]
+        role = "GEMINI LEAD COACH AND PROGRAMMER" if name == "Gemini" else "CHATGPT SUPPORTING ASSISTANT AND REVIEWER"
+        assert "YOUR ROLE: " + role in instructions
+        assert "\nCURRENT TURN: " + prompt.split("\nYour turn: ", 1)[1] in instructions
+    assistant_instructions = calls[1][1]
+    assert "do not replace the whole plan or propose a competing" in assistant_instructions
+    assert "Preserve its justified structure and intended stimulus" in assistant_instructions
+    assert "Independently flag unsafe prescriptions, unsupported claims" in assistant_instructions
     assert "lead CrossFit coach" in calls[0][2]
     assert "Gemini's" in calls[1][2]
-    assert "ChatGPT's useful review" in calls[2][2]
+    assert "ChatGPT's useful review" in calls[-1][2]
+    assert "resolve material safety issues, unsupported claims and conflicts with athlete constraints" in calls[-1][2]
     assert result.turns[-1].provider == "Gemini"
     assert result.messages[-1].content == result.final_plan
+    assert initialized == [
+        ("Gemini", "test-gemini", "gemini-3.1-pro-preview"),
+        ("ChatGPT", "test-openai", "gpt-5-mini"),
+    ]
+    assert result.models == {"Gemini": "gemini-3.1-pro-preview", "ChatGPT": "gpt-5-mini"}
+    if plan_kind is not None:
+        assert coach.last_plan.final_plan == result.final_plan
+        assert coach.last_plan.models == result.models
 
 
 def test_explicit_read_adds_exact_full_entry_to_both_coaches_without_mutating_supplied_list(monkeypatch):

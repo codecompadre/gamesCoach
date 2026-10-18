@@ -43,7 +43,7 @@ def test_plain_doctor_is_still_offline_and_uses_shared_default(monkeypatch):
     output = io.StringIO()
     assert cli._doctor(Console(file=output, width=160)) == 0
     assert not calls
-    assert DEFAULT_GEMINI_MODEL == "gemini-flash-latest"
+    assert DEFAULT_GEMINI_MODEL == "gemini-3.1-pro-preview"
     assert DEFAULT_GEMINI_MODEL in output.getvalue()
     assert "private-openai-test" not in output.getvalue()
     assert "private-gemini-test" not in output.getvalue()
@@ -100,8 +100,10 @@ def test_explicit_gemini_model_is_preserved_and_404_has_safe_fix():
         return httpx.Response(404, json={"error": {"message": "private-gemini-test"}})
     with httpx.Client(transport=httpx.MockTransport(reply)) as client:
         provider = GeminiProvider("private-gemini-test", "gemini-2.5-flash", client=client)
-        with pytest.raises(ProviderError, match="gemini-flash-latest") as caught:
+        with pytest.raises(ProviderError, match="gemini-3.1-pro-preview") as caught:
             provider.generate(instructions="CrossFit coach.", prompt="Pacing tip.")
     assert "doctor --check-api" in str(caught.value)
+    assert "No fallback model was used" in str(caught.value)
+    assert "gemini-flash-latest" not in str(caught.value)
     assert "private-gemini-test" not in str(caught.value)
     assert len(calls) == 1  # No silent fallback or duplicate generation charge.

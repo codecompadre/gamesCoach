@@ -4,7 +4,7 @@ A personal coaching app with a local browser chat and a terminal console. Gemini
 
 The coaches decline unrelated requests. Strength, aerobic work, nutrition, and recovery guidance must serve your CrossFit performance and readiness.
 
-Both models receive your athlete profile, request, and the shared discussion. **Gemini leads:** it analyzes the request and drafts the plan, ChatGPT reviews it, and Gemini refines and writes the final response. Chat is the main experience: ask questions, follow up, or use a plan command without leaving your conversation. Conversations, plans, and the model discussions are saved locally for review or export.
+Both models receive your athlete profile, request, and the shared discussion. **Gemini Pro is the lead coach:** it analyzes the request, builds the plan, and writes the final response. **ChatGPT is its supporting reviewer:** it checks assumptions, workload, timing, recovery and fueling, then recommends specific corrections with reasons. Gemini resolves those recommendations while preserving the athlete's goals and constraints. Chat is the main experience: ask questions, follow up, or use a plan command without leaving your conversation. Conversations, plans, and the model discussions are saved locally for review or export.
 
 ## Get started
 
@@ -76,12 +76,14 @@ Accepted key names:
 
 `.env.example` documents the settings; **the app does not automatically load `.env` files**. Export variables in your shell or configure them securely in your execution environment. Never paste keys into chat, a plan request, your athlete profile, or a committed file.
 
-Model defaults are `gpt-5-mini` and `gemini-flash-latest`. Google's Flash alias follows its current Flash model, so the underlying version and pricing can change. Set an explicit supported model ID if you need to pin a version. Override models with environment variables:
+Model defaults are `gemini-3.1-pro-preview` for the lead coach and `gpt-5-mini` for supporting review. The Pro model is documented in [Google's Python SDK quickstart](https://github.com/googleapis/python-genai#make-a-request), and is a **preview**: availability, pricing and behavior can change. Check model access in your Google account. Pro can cost more and take longer than Flash; the number of coaching calls is unchanged. Override models with environment variables:
 
 ```bash
 export OPENAI_MODEL="gpt-5-mini"
-export GEMINI_MODEL="gemini-flash-latest"
+export GEMINI_MODEL="gemini-3.1-pro-preview"
 ```
+
+An already exported `GEMINI_MODEL` takes precedence over the default, including an older Flash setting. Set the new value in the same Ubuntu terminal that launches the app, update any saved shell setting, and restart the app. Your athlete profile, saved conversations and PDF library stay available; a memory reset is unnecessary.
 
 ## Use the console
 
@@ -342,6 +344,8 @@ Version `0.7.0` makes chat the default menu option and adds `/workout`, `/traini
 
 Version `0.8.0` adds `gamescoach gui`, explicit memory resets, and Gemini as the lead coach. Existing local data remains available unless you choose a reset.
 
+Version `0.8.1` selects Gemini Pro by default and clarifies Gemini's lead-programmer role and GPT's supporting-review role. After updating, run `export GEMINI_MODEL="gemini-3.1-pro-preview"` to replace an older shell override, then restart the app. The CrossFit scope and API call counts are unchanged.
+
 If `/file` or the plan commands are unknown, or your menu still shows separate workout, training, nutrition, and competition options, exit the app completely and update from your `gamesCoach` checkout:
 
 ```bash
@@ -363,6 +367,8 @@ uv run pytest
 
 `doctor` alone checks local configuration without API requests. `doctor --check-api` sends one short generation request to each configured provider, returns failure if either fails, and may incur API charges. It sends no athlete profile or saved conversation and never displays keys. This tests actual generation: a model appearing in Google's listing does not guarantee its generation endpoint works.
 
-If Gemini reports that `gemini-2.5-flash` is unavailable, set `export GEMINI_MODEL="gemini-flash-latest"` in the same terminal and restart the app. An existing `GEMINI_MODEL` environment setting overrides the new default even after pulling updates. Check both keys are exported in the same shell, API billing and quotas are available, and the selected models are enabled for your accounts. For connection errors, verify access to `api.openai.com` and `generativelanguage.googleapis.com`. Keep TLS verification enabled.
+If Gemini reports that a model is unavailable, check `uv run gamescoach doctor` for the selected model. Use `export GEMINI_MODEL="gemini-3.1-pro-preview"` to select the new default, or explicitly choose another supported model enabled for your account, and restart the app. An existing `GEMINI_MODEL` environment setting overrides the default even after pulling updates. The app does not downgrade to Flash or retry automatically. Check both keys are exported in the same shell, API billing and quotas are available, and the selected models are enabled for your accounts. For connection errors, verify access to `api.openai.com` and `generativelanguage.googleapis.com`. Keep TLS verification enabled.
+
+Each provider request retains a 6,000-output-token limit and a 90-second timeout. Pro's reasoning can use part of that token budget. If a large request is truncated or times out, ask for a smaller block or one week at a time; the app rejects unfinished replies instead of saving them as a complete plan. Offline tests verify request construction and coaching handoffs, but do not establish live model access or coaching quality.
 
 The offline tests exercise the CLI and provider integration with simulated responses. Successful tests do not establish live API access; confirm that with a live plan after configuring both accounts.

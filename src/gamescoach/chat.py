@@ -1,4 +1,4 @@
-"""A persistent athlete conversation reviewed by both CrossFit coaches."""
+"""A persistent CrossFit conversation led by Gemini with ChatGPT's review."""
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ from .context import fit_context
 from .engine import _coach_notes, _demo_content
 from .models import AthleteProfile, ChatMessage, CoachTurn, CoachingSession
 from .knowledge import Library
-from .prompts import COACH_INSTRUCTIONS, SCOPE_REFUSAL, TASK_GUIDANCE
+from .prompts import ASSISTANT_COACH_INSTRUCTIONS, COACH_INSTRUCTIONS, LEAD_COACH_INSTRUCTIONS, SCOPE_REFUSAL, TASK_GUIDANCE
 from .providers import GeminiProvider, OpenAIProvider, ProviderError
 from .storage import Store
 
@@ -328,7 +328,11 @@ class ChatCoach:
                 provider = providers[index]
                 provider_name = provider.name
                 content = provider.generate(
-                    instructions=instructions,
+                    instructions=(
+                        instructions + "\n\n"
+                        + (LEAD_COACH_INSTRUCTIONS if index == 0 else ASSISTANT_COACH_INSTRUCTIONS)
+                        + "\nCURRENT TURN: " + task
+                    ),
                     prompt=self._prompt(self.context, dialogue, turns, notes, task, reference_time, prepared),
                 )
             if SCOPE_REFUSAL in content:
@@ -344,28 +348,28 @@ class ChatCoach:
         for index in range(self.rounds):
             if index == 0:
                 task = (
-                    "As the lead CrossFit coach, analyze the athlete's request and propose a complete, actionable plan of the requested kind. Use their latest request, earlier dialogue, profile and relevant saved entries; preserve their constraints and label unknowns. ChatGPT will review your proposal."
+                    "As the lead CrossFit coach and programmer, analyze the athlete's request and propose one complete, actionable plan of the requested kind. Use their latest request, earlier dialogue, profile and relevant saved entries; preserve their constraints and label unknowns. ChatGPT will provide a supporting review of your proposal."
                     if plan_kind is not None else
-                    "As the lead CrossFit coach, analyze the latest athlete message and draft a concise coaching reply using the earlier dialogue and relevant saved entries. Answer the actual question; greet or ask a focused follow-up as appropriate instead of always producing a full plan. ChatGPT will review your proposal."
+                    "As the lead CrossFit coach, analyze the latest athlete message and draft a concise coaching reply using the earlier dialogue and relevant saved entries. Answer the actual question; greet or ask a focused follow-up as appropriate instead of always producing a full plan. ChatGPT will provide a supporting review of your proposal."
                 )
                 take_turn(0, "chat-proposal", task)
             else:
                 task = (
-                    "Revise your complete plan using ChatGPT's critique. Address material assumptions, contradictions, workload, progression and feasibility while preserving the athlete's supplied constraints."
+                    "As the lead coach and programmer, refine your complete plan using ChatGPT's supporting review. Resolve material safety issues, unsupported claims and conflicts with athlete constraints. Preserve justified structure and stimulus, and improve workload, progression and feasibility with reasons for necessary changes."
                     if plan_kind is not None else
-                    "Refine your proposed reply using ChatGPT's specific critique. Keep it natural, directly relevant to the latest message and consistent with the athlete's earlier details."
+                    "As the lead coach, refine your proposed reply using ChatGPT's supporting review. Resolve material safety issues, unsupported claims and conflicts with athlete constraints. Preserve sound advice and keep it natural, directly relevant to the latest message and consistent with the athlete's earlier details."
                 )
                 take_turn(0, "chat-refinement", task)
             task = (
-                "Review Gemini's complete CrossFit plan as an independent coach against the supplied dialogue, earlier source excerpts, profile, saved entries and task focus. Challenge unsupported assumptions or contradictions; check time, volume, intensity, fueling, recovery and progression as applicable. Suggest specific corrections and preserve justified strengths."
+                "As the supporting assistant, review Gemini's complete CrossFit plan against the supplied dialogue, earlier source excerpts, profile, saved entries and task focus. Independently check safety, unsupported assumptions, contradictions and athlete constraints; check time, volume, intensity, fueling, recovery and progression as applicable. Give concise, targeted corrections with practical reasons; preserve justified structure and stimulus. Do not replace the whole plan or propose a competing program. Flag material issues even if a substantial change is needed."
                 if plan_kind is not None else
-                "Review Gemini's proposed reply as an independent coach against the supplied athlete dialogue, earlier source excerpts, profile and saved entries. Challenge unsupported assumptions or contradictions and suggest specific CrossFit coaching corrections. Do not expand a short conversation into an unnecessary full plan."
+                "As the supporting assistant, review Gemini's proposed reply against the supplied athlete dialogue, earlier source excerpts, profile and saved entries. Independently check safety, unsupported assumptions, contradictions and athlete constraints. Give concise, targeted corrections with practical reasons and preserve sound advice. Do not replace the whole plan or propose a competing program; do not expand a short conversation into an unnecessary full plan. Flag material issues even if a substantial change is needed."
             )
             take_turn(1, "chat-review", task)
         task = (
-            "As the lead coach, write the final standalone athlete-facing CrossFit plan of the requested kind using your proposal and ChatGPT's useful review recommendations. Include actionable details, scaling, relevant assumptions, recovery and a measurable progress check. Resolve useful critiques without exposing the review process. Do not refer the athlete to previous messages or unseen drafts for required plan details."
+            "As the lead coach and programmer, write the final standalone athlete-facing CrossFit plan of the requested kind using your proposal and ChatGPT's useful review recommendations. You own the final plan: resolve material safety issues, unsupported claims and conflicts with athlete constraints while preserving justified structure and stimulus. Include actionable details, scaling, relevant assumptions, remaining tradeoffs, recovery and a measurable progress check. Do not expose the review process or refer the athlete to previous messages or unseen drafts for required plan details."
             if plan_kind is not None else
-            "As the lead coach, write the final athlete-facing reply to the latest message using your proposal and ChatGPT's useful review recommendations. Answer naturally and concisely, with relevant context or a focused question. Do not expose the review process or refer the athlete to unseen drafts."
+            "As the lead coach, write the final athlete-facing reply to the latest message using your proposal and ChatGPT's useful review recommendations. You own the final answer: resolve material safety issues, unsupported claims and conflicts with athlete constraints while preserving sound advice. Answer naturally and concisely, with relevant context, uncertainty or a focused question. Do not expose the review process or refer the athlete to unseen drafts."
         )
         take_turn(0, "chat-answer", task)
         dialogue.append(ChatMessage("assistant", turns[-1].content))

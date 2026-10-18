@@ -84,6 +84,7 @@ def test_local_state_shows_presence_only_and_does_not_prepare_paid_coaching(brow
     assert status == 200
     assert browser.server_address[0] == "127.0.0.1"
     assert state["config"]["keys"] == {"ChatGPT": True, "Gemini": True}
+    assert state["config"]["models"] == {"ChatGPT": "gpt-5-mini", "Gemini": "gemini-3.1-pro-preview"}
     assert state["demo"] is True and state["sessions"] == [] and state["profile"] is None
     assert "secret-value" not in json.dumps(state)
     assert "/private/notes.md" not in json.dumps(state)

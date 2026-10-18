@@ -1,4 +1,4 @@
-"""Alternate two coaches over a shared conversation, then synthesize a plan."""
+"""Let Gemini lead a CrossFit plan with ChatGPT's supporting review."""
 
 from datetime import datetime, timezone
 import json
@@ -10,7 +10,7 @@ from uuid import uuid4
 from .config import DEFAULT_GEMINI_MODEL, DEFAULT_OPENAI_MODEL, GEMINI_KEY_NAMES, OPENAI_KEY_NAMES, credential_binding
 from .models import AthleteProfile, CoachTurn, CoachingSession
 from .knowledge import Library
-from .prompts import COACH_INSTRUCTIONS, SCOPE_REFUSAL, TASK_GUIDANCE
+from .prompts import ASSISTANT_COACH_INSTRUCTIONS, COACH_INSTRUCTIONS, LEAD_COACH_INSTRUCTIONS, SCOPE_REFUSAL, TASK_GUIDANCE
 from .providers import GeminiProvider, OpenAIProvider, ProviderError
 from .storage import Store
 
@@ -155,7 +155,11 @@ def create_session(
             provider = providers[index]
             provider_name = provider.name
             content = provider.generate(
-                instructions=COACH_INSTRUCTIONS,
+                instructions=(
+                    COACH_INSTRUCTIONS + "\n\n"
+                    + (LEAD_COACH_INSTRUCTIONS if index == 0 else ASSISTANT_COACH_INSTRUCTIONS)
+                    + "\nCURRENT TURN: " + task
+                ),
                 prompt=_prompt(kind, request, profile, notes, turns, task, reference_time, methodology, brief),
             )
         if SCOPE_REFUSAL in content:
@@ -167,11 +171,11 @@ def create_session(
 
     for index in range(rounds):
         if index == 0:
-            take_turn(0, "proposal", "As the lead CrossFit coach, analyze the athlete's request and propose an actionable starting plan. Label unknowns and explain the intended CrossFit stimulus. ChatGPT will review your proposal.")
+            take_turn(0, "proposal", "As the lead CrossFit coach and programmer, analyze the athlete's request and propose one actionable starting plan. Label unknowns and explain the intended CrossFit stimulus. ChatGPT will provide a supporting review of your proposal.")
         else:
-            take_turn(0, "refinement", "Revise your plan using ChatGPT's review. Address each material issue, clarify disagreements, and improve feasibility and progression.")
-        take_turn(1, "review", "Review Gemini's full shared plan as an independent CrossFit coach. Challenge weak assumptions, check time/volume/intensity/fueling, and suggest specific corrections. Keep strengths that are justified.")
-    take_turn(0, "synthesis", "As the lead coach, write the final standalone athlete-facing CrossFit plan using your proposal and ChatGPT's useful review recommendations. Resolve useful critiques, state remaining unknowns and tradeoffs, and include a measurable progress check. Do not refer the athlete to previous messages.")
+            take_turn(0, "refinement", "As the lead coach and programmer, refine your plan using ChatGPT's supporting review. Resolve material safety issues, unsupported claims and conflicts with athlete constraints. Preserve the justified structure and stimulus; explain necessary changes and improve feasibility and progression.")
+        take_turn(1, "review", "As the supporting assistant, review Gemini's full shared plan. Independently check assumptions, safety, athlete constraints and time/volume/intensity/fueling. Give concise, targeted corrections with practical reasons; preserve justified structure and stimulus. Do not replace the whole plan or propose a competing program. Flag material issues even if a substantial change is needed.")
+    take_turn(0, "synthesis", "As the lead coach and programmer, write the final standalone athlete-facing CrossFit plan using your proposal and ChatGPT's useful review recommendations. You own the final plan: resolve material safety issues, unsupported claims and conflicts with athlete constraints, retain justified structure and stimulus, and state remaining unknowns and tradeoffs. Include a measurable progress check. Do not expose the review process or refer the athlete to previous messages.")
     return CoachingSession(
         id=uuid4().hex[:12],
         created_at=reference_time.astimezone(timezone.utc).isoformat(),

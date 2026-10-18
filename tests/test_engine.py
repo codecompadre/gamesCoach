@@ -70,25 +70,43 @@ def test_both_coaches_receive_all_prior_turns_and_actual_profile(monkeypatch, tm
 
 
 @pytest.mark.parametrize("kind", ["workout", "training", "nutrition", "competition"])
-def test_gemini_builds_plan_chatgpt_reviews_and_gemini_resolves_review(monkeypatch, kind):
+@pytest.mark.parametrize("rounds", [1, 2])
+def test_gemini_builds_plan_chatgpt_assists_and_gemini_resolves_review(monkeypatch, kind, rounds):
     monkeypatch.setenv("OPENAI_API_KEY", "test-openai")
     monkeypatch.setenv("GEMINI_API_KEY", "test-gemini")
-    calls, _ = fake_coaches(monkeypatch, [
+    calls, initialized = fake_coaches(monkeypatch, [
         "Gemini draft: 5 x 4 minute CrossFit aerobic intervals.",
         "ChatGPT critique: reduce to 4 intervals to respect the 30 minute budget.",
+    ] + [
+        "Gemini refinement: preserve aerobic intervals, correct the time budget.",
+        "ChatGPT review: keep the interval structure and include warm-up and cooldown.",
+    ] * (rounds - 1) + [
         "Gemini final: 4 x 4 minutes, 1 minute easy, with warm-up and cooldown.",
     ])
-    result = engine.create_session(kind, "CrossFit aerobic work in 30 minutes", AthleteProfile(), rounds=1)
+    result = engine.create_session(kind, "CrossFit aerobic work in 30 minutes", AthleteProfile(), rounds=rounds)
 
-    assert [name for name, _, _ in calls] == ["Gemini", "ChatGPT", "Gemini"]
-    assert context(calls[0][2])["shared_conversation"] == []
-    assert context(calls[1][2])["shared_conversation"] == [vars(result.turns[0])]
-    assert context(calls[2][2])["shared_conversation"] == [vars(turn) for turn in result.turns[:2]]
+    assert [name for name, _, _ in calls] == ["Gemini", "ChatGPT"] * rounds + ["Gemini"]
+    for index, (name, instructions, prompt) in enumerate(calls):
+        assert context(prompt)["shared_conversation"] == [vars(turn) for turn in result.turns[:index]]
+        role = "GEMINI LEAD COACH AND PROGRAMMER" if name == "Gemini" else "CHATGPT SUPPORTING ASSISTANT AND REVIEWER"
+        assert "YOUR ROLE: " + role in instructions
+        # The current task is in trusted instructions as well as after the data.
+        assert "\nCURRENT TURN: " + prompt.split("\nYour turn: ", 1)[1] in instructions
+    assistant_instructions = calls[1][1]
+    assert "do not replace the whole plan or propose a competing" in assistant_instructions
+    assert "Preserve its justified structure and intended stimulus" in assistant_instructions
+    assert "Independently flag unsafe prescriptions, unsupported claims" in assistant_instructions
     assert "lead CrossFit coach" in calls[0][2]
     assert "Gemini's full shared plan" in calls[1][2]
-    assert "ChatGPT's useful review" in calls[2][2]
+    assert "ChatGPT's useful review" in calls[-1][2]
+    assert "resolve material safety issues, unsupported claims and conflicts with athlete constraints" in calls[-1][2]
     assert result.turns[-1].provider == "Gemini"
     assert result.final_plan == result.turns[-1].content
+    assert initialized == [
+        ("Gemini", "test-gemini", "gemini-3.1-pro-preview"),
+        ("ChatGPT", "test-openai", "gpt-5-mini"),
+    ]
+    assert result.models == {"Gemini": "gemini-3.1-pro-preview", "ChatGPT": "gpt-5-mini"}
 
 
 def test_missing_second_key_prevents_any_provider_initialization(monkeypatch):
