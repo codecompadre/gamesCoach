@@ -89,17 +89,15 @@ def test_disabling_cli_auto_references_does_not_delete_history(monkeypatch, loca
     assert "Automatic recent-history references in CLI chats: off" in output.getvalue()
 
 
-def test_fresh_chat_clears_references_without_deleting_existing_sessions(monkeypatch, local_store):
+def test_fresh_shortcut_preserves_persistent_conversation(monkeypatch, local_store):
     plan = create_session("workout", "CrossFit training week", AthleteProfile(), demo=True)
     local_store.save_session(plan)
     console, _ = console_input(monkeypatch, ["First CrossFit question", "/fresh", "A new CrossFit training path", "/quit"])
     cli._chat(console, local_store, demo=True)
     chats = local_store.list_chats(demo=True)
-    assert len(chats) == 2
-    first, = [chat for chat in chats if chat.request == "First CrossFit question"]
-    fresh, = [chat for chat in chats if chat.request == "A new CrossFit training path"]
-    assert first.context_ids == [plan.id]
-    assert fresh.context_ids == []
+    assert len(chats) == 1
+    assert len(chats[0].messages) == 4
+    assert chats[0].context_ids == [plan.id]
     assert local_store.get_session(plan.id) == plan
 
 

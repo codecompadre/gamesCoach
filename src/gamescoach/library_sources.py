@@ -1,4 +1,4 @@
-"""Automatically retain PDFs from one private, locally registered folder."""
+"""Automatically retain documents from one private, locally registered folder."""
 
 import json
 import os
@@ -26,7 +26,7 @@ def _read_config(library: Library) -> dict | None:
     except FileNotFoundError:
         return None
     except OSError:
-        raise KnowledgeError("Cannot read the PDF folder setting. Check its local permissions or use library unwatch.") from None
+        raise KnowledgeError("Cannot read the CrossFit document folder setting. Check its local permissions or use library unwatch.") from None
     try:
         if len(text) > _MAX_CONFIG_BYTES:
             raise ValueError
@@ -39,7 +39,7 @@ def _read_config(library: Library) -> dict | None:
         if not Path(folder).is_absolute() or not isinstance(files, dict) or len(files) > MAX_GUIDES:
             raise ValueError
         for name, entry in files.items():
-            if not isinstance(name, str) or Path(name).name != name or "/" in name or "\\" in name or not name.lower().endswith(".pdf") or "\x00" in name:
+            if not isinstance(name, str) or Path(name).name != name or "/" in name or "\\" in name or Path(name).suffix.lower() not in (".pdf", ".docx", ".txt", ".md") or "\x00" in name:
                 raise ValueError
             if not isinstance(entry, dict) or type(entry.get("size")) is not int or entry["size"] < 0:
                 raise ValueError
@@ -49,7 +49,7 @@ def _read_config(library: Library) -> dict | None:
                 raise ValueError
         return data
     except (ValueError, TypeError, KeyError):
-        raise KnowledgeError("The saved PDF folder setting is invalid. Use library unwatch, then library watch PATH to register it again.") from None
+        raise KnowledgeError("The saved CrossFit document folder setting is invalid. Use library unwatch, then library watch PATH to register it again.") from None
 
 
 def _save_config(library: Library, data: dict) -> None:
@@ -66,7 +66,7 @@ def _save_config(library: Library, data: dict) -> None:
             handle.write("\n")
         os.replace(temporary, path)
     except OSError:
-        raise KnowledgeError("Cannot save the PDF folder setting. Check the coaching library's local permissions.") from None
+        raise KnowledgeError("Cannot save the CrossFit document folder setting. Check the coaching library's local permissions.") from None
     finally:
         if temporary is not None:
             temporary.unlink(missing_ok=True)
@@ -76,17 +76,22 @@ def _scan(folder: Path) -> list[Path]:
     try:
         if not folder.is_dir():
             raise OSError
-        files = sorted((path for path in folder.iterdir() if path.suffix.lower() == ".pdf" and path.is_file()), key=lambda path: path.name.casefold())
+        files = sorted((path for path in folder.iterdir() if path.suffix.lower() in (".pdf", ".docx", ".txt", ".md") and path.is_file()), key=lambda path: path.name.casefold())
     except OSError:
-        raise KnowledgeError("Cannot access the registered PDF folder. Check that it exists and is mounted in Ubuntu (/mnt/c/ for Windows). Previously imported knowledge is retained.") from None
+        raise KnowledgeError("Cannot access the registered CrossFit document folder. Check that it exists and is mounted in Ubuntu (/mnt/c/ for Windows). Previously imported knowledge is retained.") from None
     if len(files) > MAX_GUIDES:
-        raise KnowledgeError("The PDF folder contains more than six PDFs. Choose a folder containing at most six methodology guides.")
+        raise KnowledgeError("The CrossFit document folder contains more than six supported documents. Choose a folder containing at most six methodology guides.")
     return files
 
 
 def _sync(library: Library, config: dict, *, force: bool = False) -> dict:
     folder = Path(config["folder"])
     files = _scan(folder)
+    try:
+        unsupported = sorted(path.name for path in folder.iterdir() if path.is_file() and path.suffix.lower() not in (".pdf", ".docx", ".txt", ".md"))
+    except OSError:
+        raise KnowledgeError("Cannot inspect the watched CrossFit folder. Check its path and read permissions.") from None
+    warnings = [f"Unsupported file skipped: {name}. Supported formats: .pdf, .docx, .txt, .md." for name in unsupported]
     previous = config["files"]
     current = {}
     imported = unchanged = 0
@@ -122,7 +127,7 @@ def _sync(library: Library, config: dict, *, force: bool = False) -> dict:
             try:
                 library.remove(identifier)
             except KnowledgeError:
-                raise KnowledgeError("PDF folder sync failed and its partial imports could not be removed. Check local library permissions and library list before coaching.") from None
+                raise KnowledgeError("CrossFit document folder sync failed and its partial imports could not be removed. Check local library permissions and library list before coaching.") from None
         raise
 
     # Validate and save every changed PDF before dropping its previous edition.
@@ -139,15 +144,15 @@ def _sync(library: Library, config: dict, *, force: bool = False) -> dict:
     updated = {"version": _VERSION, "folder": config["folder"], "files": current}
     if updated != config or force:
         _save_config(library, updated)
-    return {"folder": config["folder"], "imported": imported, "unchanged": unchanged, "guides": len(library.list_guides())}
+    return {"folder": config["folder"], "imported": imported, "unchanged": unchanged, "guides": len(library.list_guides()), **({"warnings": warnings} if warnings else {})}
 
 
 def configure_folder(value: str | Path, *, library: Library | None = None) -> dict:
-    """Register and import a local PDF folder, accepting Windows/WSL paths."""
+    """Register and import a local CrossFit document folder, accepting Windows/WSL paths."""
     try:
         folder = document_path(value).resolve()
     except (DocumentError, OSError, ValueError, RuntimeError):
-        raise KnowledgeError("Enter an accessible PDF folder path. Windows folders in Ubuntu are normally under /mnt/c/.") from None
+        raise KnowledgeError("Enter an accessible CrossFit document folder path. Windows folders in Ubuntu are normally under /mnt/c/.") from None
     library = library if library is not None else Library()
     existing = _read_config(library)
     previous = existing["files"] if existing is not None and existing["folder"] == str(folder) else {}
@@ -155,7 +160,7 @@ def configure_folder(value: str | Path, *, library: Library | None = None) -> di
 
 
 def sync_folder(*, library: Library | None = None) -> dict | None:
-    """Import changed PDFs and refresh legacy extraction once after an upgrade."""
+    """Import changed documents and refresh legacy extraction once after an upgrade."""
     library = library if library is not None else Library()
     config = _read_config(library)
     return None if config is None else _sync(library, config)
@@ -175,4 +180,4 @@ def clear_folder(*, library: Library | None = None) -> None:
     try:
         _config_path(library if library is not None else Library()).unlink(missing_ok=True)
     except OSError:
-        raise KnowledgeError("Cannot remove the PDF folder setting. Check its local permissions.") from None
+        raise KnowledgeError("Cannot remove the CrossFit document folder setting. Check its local permissions.") from None

@@ -152,7 +152,7 @@ Colors adapt to your terminal. To disable them, launch with `NO_COLOR=1 uv run g
 
 ## Talk to the coach
 
-Choose **1 — Chat** or press **Enter** at the main menu. If you have saved conversations, press **Enter** again to continue the most recently saved chat, choose **2** to start a new one, or **3** to pick an older conversation from a numbered list. Use **b** to return to the main menu. With no saved chats, a new conversation starts immediately. Live and demo chats appear separately.
+Choose **1 — Chat** or press **Enter** at the main menu to resume your persistent conversation automatically. With no saved chat, the first conversation starts immediately. Live and demo conversations stay separate. Read older archived chats with `gamescoach show ID`.
 
 You can also start directly:
 
@@ -185,8 +185,8 @@ New chats load your saved athlete profile and the five most recent plans, import
 | `/sources` | Inspect the automatically loaded methodology brief and passages selected for the latest question |
 | `/context` | Inspect whether context selection is active, available conversation and reference counts, and PDF knowledge status |
 | `/clearrefs` | Remove loaded entry references while retaining the current conversation |
-| `/new` | Start a fresh conversation while retaining the profile and selected references |
-| `/fresh` | Start a terminal conversation without saved references, retaining your profile and PDF library |
+| `/new` | Continue the persistent coaching conversation |
+| `/fresh` | Continue the persistent coaching conversation; use `/clearrefs` to detach references |
 
 For a long reply, `/view` uses the `less` pager when available in an interactive terminal. It makes no AI request. If `less` is unavailable or output is redirected, the reply is displayed again in the normal readable layout.
 
@@ -372,3 +372,31 @@ If Gemini reports that a model is unavailable, check `uv run gamescoach doctor` 
 Each provider request retains a 6,000-output-token limit and a 90-second timeout. Pro's reasoning can use part of that token budget. If a large request is truncated or times out, ask for a smaller block or one week at a time; the app rejects unfinished replies instead of saving them as a complete plan. Offline tests verify request construction and coaching handoffs, but do not establish live model access or coaching quality.
 
 The offline tests exercise the CLI and provider integration with simulated responses. Successful tests do not establish live API access; confirm that with a live plan after configuring both accounts.
+
+
+### Persistent coaching and document controls
+
+The browser restores your most recently saved coaching conversation automatically.
+Requests without a conversation ID also continue it. Live and static demo history
+remain separate. Terminal `chat` resumes the latest compatible conversation;
+`/new` and `/fresh` keep that conversation. Older saved exchanges remain on disk.
+Gemini Pro leads coaching and GPT reviews its proposals; CrossFit scope is unchanged.
+
+`gamescoach library watch PATH` watches one CrossFit folder for `.pdf`, `.docx`,
+`.txt`, and `.md` guides at startup. Subfolders are excluded. Unsupported files
+are named in feedback and skipped. The existing six-guide library limit applies;
+PDFs allow 25 MiB and other documents allow 10 MiB. Word/text/Markdown guides
+use the same local extraction as training-file imports. Non-PDF citations use
+filenames rather than invented page numbers. Importing makes no API calls.
+
+In **Saved plans & files**, Delete removes one saved plan or extracted training
+file after confirmation. Library Remove removes one retained guide. Original
+files and past conversation text are preserved. Removed watched guides stay
+removed until their source changes or the folder is registered again.
+
+**Settings & memory → Factory reset** requires typing `RESET`. It clears saved
+conversations, plans, imported text, profile, guide indexes, prepared caches,
+watched-folder configuration and saved context preferences. The terminal
+alternative is `gamescoach memory reset --scope factory`. Source documents,
+external notes, environment configuration and API keys are preserved. Stop other
+running gamesCoach instances before resetting so they cannot save old data again.

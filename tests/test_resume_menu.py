@@ -61,7 +61,7 @@ def test_reopen_menu_enter_resumes_same_complete_conversation(menu_env):
     original, = saved_entries(menu_env)
     second = run_menu(menu_env, "1\n\nCan I retest next month?\n/ quit\nq\n")
     assert second.returncode == 0, second.stdout + second.stderr
-    assert "Continue latest conversation (Enter)" in second.stdout
+    assert "Chat option" not in second.stdout
     assert "Resuming chat:" in second.stdout and original["id"] in second.stdout
     assert "CrossFit aerobic capacity" in second.stdout and "How should I progress?" in second.stdout
     updated, = saved_entries(menu_env)
@@ -72,43 +72,15 @@ def test_reopen_menu_enter_resumes_same_complete_conversation(menu_env):
     ]
 
 
-def test_new_menu_option_preserves_old_conversation_and_saves_new_id(menu_env):
-    previous = save_chat(menu_env, "CrossFit engine development")
-    result = run_menu(menu_env, "1\n2\nCrossFit competition taper\n/quit\nq\n")
-    assert result.returncode == 0, result.stdout + result.stderr
-    chats = saved_entries(menu_env)
-    assert len(chats) == 2 and len({chat["id"] for chat in chats}) == 2
-    assert {chat["request"] for chat in chats} == {previous.request, "CrossFit competition taper"}
-    original, = [chat for chat in chats if chat["id"] == previous.id]
-    assert original == previous.to_dict()
-
-
-def test_numbered_picker_resumes_older_chat_and_retries_invalid_choices(menu_env):
+def test_menu_resumes_latest_and_preserves_older_archive(menu_env):
     older = save_chat(menu_env, "CrossFit intervals", order=1)
     latest = save_chat(menu_env, "CrossFit nutrition", order=2)
-    result = run_menu(menu_env, "1\nunknown\n3\n\n0\n99\ninvalid\n2\nWhat pace should I use?\n/quit\nq\n")
+    result = run_menu(menu_env, "1\nCrossFit fueling progression\n/quit\nq\n")
     assert result.returncode == 0, result.stdout + result.stderr
-    assert "Choose 1–3" in result.stdout
-    assert result.stdout.count("Choose a conversation number") == 4
-    assert "Saved conversations" in result.stdout
-    assert "CrossFit intervals" in result.stdout and "CrossFit nutrition" in result.stdout
-    assert f"Resuming chat: {older.id}" in result.stdout
     chats = {chat["id"]: chat for chat in saved_entries(menu_env)}
-    assert len(chats[older.id]["messages"]) == 4
-    assert chats[latest.id] == latest.to_dict()
-
-
-@pytest.mark.parametrize("back", ("b", "/quit", "/ quit", "/BACK"))
-@pytest.mark.parametrize("picker", (False, True))
-def test_back_from_chat_choices_returns_to_main_menu_without_writes(menu_env, back, picker):
-    original = save_chat(menu_env, "CrossFit pacing")
-    prefix = "1\n3\n" if picker else "1\n"
-    result = run_menu(menu_env, prefix + back + "\nq\n")
-    assert result.returncode == 0, result.stdout + result.stderr
-    assert "Returning to the menu" in result.stdout
-    assert result.stdout.count("1 Chat") == 2
-    assert saved_entries(menu_env) == [original.to_dict()]
-    assert "Resuming chat:" not in result.stdout
+    assert chats[older.id] == older.to_dict()
+    assert len(chats[latest.id]["messages"]) == 4
+    assert "Chat option" not in result.stdout
 
 
 def test_first_chat_starts_directly_when_only_plans_are_saved(menu_env):
@@ -128,7 +100,7 @@ def test_many_newer_plans_do_not_hide_saved_conversation(menu_env):
         store.save_session(create_session("workout", f"CrossFit workout {index}", AthleteProfile(), rounds=1, demo=True))
     result = run_menu(menu_env, "1\n\n/quit\nq\n")
     assert result.returncode == 0, result.stdout + result.stderr
-    assert "Continue latest conversation" in result.stdout
+    assert "Chat option" not in result.stdout
     assert f"Resuming chat: {original.id}" in result.stdout
     assert len(saved_entries(menu_env)) == 13
 
@@ -137,7 +109,7 @@ def test_many_newer_plans_do_not_hide_saved_conversation(menu_env):
 def test_resume_picker_only_offers_chats_in_current_mode(menu_env, demo):
     matching = save_chat(menu_env, "Matching CrossFit conversation", demo=demo, order=1)
     other = save_chat(menu_env, "Other mode CrossFit conversation", demo=not demo, order=2)
-    result = run_menu(menu_env, "1\n3\n1\n/quit\nq\n", demo=demo)
+    result = run_menu(menu_env, "1\n/quit\nq\n", demo=demo)
     assert result.returncode == 0, result.stdout + result.stderr
     assert f"Resuming chat: {matching.id}" in result.stdout
     assert other.id not in result.stdout and other.request not in result.stdout
@@ -155,41 +127,9 @@ def test_opposite_mode_only_skips_picker(menu_env, demo):
     assert len(saved_entries(menu_env)) == 1
 
 
-@pytest.mark.parametrize("input_text", ("1\n", "1\n3\n"))
-def test_eof_from_saved_chat_choices_returns_cleanly_without_writes(menu_env, input_text):
+def test_eof_in_resumed_conversation_returns_cleanly_without_writes(menu_env):
     original = save_chat(menu_env, "CrossFit pacing")
-    result = run_menu(menu_env, input_text)
+    result = run_menu(menu_env, "1\n")
     assert result.returncode == 0, result.stdout + result.stderr
-    assert "Returning to the menu" in result.stdout
     assert "Traceback" not in result.stdout + result.stderr
     assert saved_entries(menu_env) == [original.to_dict()]
-
-
-@pytest.mark.parametrize("picker", (False, True))
-def test_ctrl_c_from_choices_returns_without_starting_chat(monkeypatch, menu_env, picker):
-    original = save_chat(menu_env, "CrossFit pacing")
-    console = Console(file=io.StringIO(), width=120)
-    entries = iter(["3"] if picker else [])
-
-    def interrupted_input(prompt):
-        try:
-            return next(entries)
-        except StopIteration:
-            raise KeyboardInterrupt
-
-    monkeypatch.setattr(console, "input", interrupted_input)
-    monkeypatch.setattr(cli, "_chat", lambda *args, **kwargs: pytest.fail("Must not start chat"))
-    cli._chat_menu(console, Store(menu_env["GAMESCOACH_DATA_DIR"]), demo=True)
-    assert "Returning to the menu" in console.file.getvalue()
-    assert saved_entries(menu_env) == [original.to_dict()]
-
-
-def test_menu_labels_escape_request_markup_and_identify_started_time(monkeypatch, menu_env):
-    original = save_chat(menu_env, "CrossFit [red]intervals[/red]\nwith rowing")
-    console = Console(file=io.StringIO(), width=120, color_system=None)
-    monkeypatch.setattr(console, "input", lambda prompt: "b")
-    cli._chat_menu(console, Store(menu_env["GAMESCOACH_DATA_DIR"]), demo=True)
-    output = console.file.getvalue()
-    assert "CrossFit [red]intervals[/red] with rowing" in output
-    assert f"Started: {original.created_at}" in output
-    assert original.id not in output

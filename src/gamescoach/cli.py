@@ -102,7 +102,7 @@ def _parser() -> argparse.ArgumentParser:
     memory_commands = memory.add_subparsers(dest="memory_command")
     memory_commands.add_parser("status", help="show what the app retains locally")
     reset = memory_commands.add_parser("reset", help="erase retained app data after typing RESET")
-    reset.add_argument("--scope", choices=("history", "all"), default="history")
+    reset.add_argument("--scope", choices=("history", "all", "factory"), default="history")
     settings = memory_commands.add_parser("settings", help="control automatic references and optional coach notes")
     settings.add_argument("--auto-references", choices=("on", "off"))
     settings.add_argument("--coach-notes", choices=("on", "off"))
@@ -137,8 +137,8 @@ def _parser() -> argparse.ArgumentParser:
     library_commands.add_parser("list", help="show saved methodology guides")
     remove_guide = library_commands.add_parser("remove", help="remove a guide from future library lookups")
     remove_guide.add_argument("id")
-    watch_guides = library_commands.add_parser("watch", help="import a folder's PDFs and check for updates at startup")
-    watch_guides.add_argument("path", help="local PDF folder; Windows paths work in Ubuntu/WSL")
+    watch_guides = library_commands.add_parser("watch", help="import a folder's PDF, DOCX, TXT and Markdown guides at startup")
+    watch_guides.add_argument("path", help="local CrossFit document folder; Windows paths work in Ubuntu/WSL")
     library_commands.add_parser("unwatch", help="stop checking the PDF folder; keep imported knowledge")
 
     show = commands.add_parser("show", help="read a saved plan or complete chat")
@@ -435,13 +435,15 @@ def _memory_status(console: Console, store: Store) -> None:
     console.print(Text(f"Athlete profile: {'saved' if status['has_profile'] else 'none'} · PDF folder auto-import: {'on' if status['watched_folder'] else 'off'}"))
     for name, label in (("auto_references", "Automatic recent-history references in CLI chats"), ("coach_notes", "Optional external coach notes")):
         console.print(Text(f"{label}: {'on' if status['settings'][name] else 'off'}"))
-    console.print("A new browser chat starts without history references. Profile and active PDF guidance remain available until reset.")
+    console.print("The browser resumes your coaching conversation and references. Profile and active guides remain available until reset.")
     console.print("Reset history: gamescoach memory reset --scope history")
     console.print("Reset all app memory: gamescoach memory reset --scope all")
 
 
 def _reset_memory(console: Console, store: Store, scope: str) -> None:
-    if scope == "all":
+    if scope == "factory":
+        console.print("[yellow]Factory reset clears chats, plans, imported text, athlete profile, guide indexes, caches, watched-folder settings and saved context preferences.[/yellow]")
+    elif scope == "all":
         console.print("[yellow]Erase all chats, saved plans, imported training text, athlete profile, and indexed PDF knowledge. Stop PDF folder auto-import and disable automatic history references and optional coach notes.[/yellow]")
     else:
         console.print("[yellow]Erase all chats, saved plans, and imported training text. Keep your athlete profile, PDF knowledge, and memory settings.[/yellow]")
@@ -466,7 +468,7 @@ def _chat_help(console: Console, *, from_menu: bool) -> None:
     console.print("Plan commands use this conversation and save a separate plan in History; in live mode they call both APIs like a coaching message.")
     console.print("/help  Show commands    /history  List saved plans and chats    /profile  Read your saved profile")
     console.print("/view  Reopen the latest coach reply; scroll with arrows/Page Up/Down and q returns to chat")
-    console.print("/read ID  Read and add a saved entry to coaching context    /new  Start a fresh conversation")
+    console.print("/read ID  Read and add a saved entry to coaching context    /new  Continue the coaching conversation")
     console.print("/fresh  Start without saved references; keep your profile and PDF guides")
     console.print("/file [PATH]  Import a Word .docx, text or Markdown training file (prompts for a path if omitted)")
     console.print("/clearrefs  Remove saved entries from coaching context; your profile and current chat remain")
@@ -585,7 +587,16 @@ def _chat(
     context_limit: int = 5,
 ) -> None:
     profile = store.load_profile() or AthleteProfile()
-    session = store.get_session(resume) if resume else None
+    chats = store.list_chats(demo=demo)
+    session = chats[0] if chats else None
+    if resume:
+        requested = store.get_session(resume)
+        if requested.kind != "chat" or not requested.messages:
+            raise StoreError("Resume a saved coach chat containing athlete and coach messages.")
+        if requested.demo != demo:
+            raise StoreError("Resume demo chats with --demo, and live chats without --demo.")
+    if resume and (session is None or resume != session.id):
+        raise StoreError("Resume the latest coaching conversation. Older conversations can be read using show ID.")
     context = []
     if session is not None:
         for context_id in session.context_ids:
@@ -710,16 +721,8 @@ def _chat(
                         console.print(Text(f"Added coaching context: {entry.id} · {entry.kind}", style="green"))
                         _save_chat_references(console, store, coach)
                     _render_session(console, entry)
-                elif name == "new" and not argument:
-                    coach = ChatCoach(profile, list(coach.context), rounds=rounds, demo=demo)
-                    console.print("Started a new chat. Your athlete profile and selected saved entries are still loaded; previous chats remain in history.")
-                    context_notice_shown = bool(coach.context_report)
-                    if coach.context_notice:
-                        console.print(Text(coach.context_notice, style="dim"))
-                elif name == "fresh" and not argument:
-                    coach = ChatCoach(profile, [], rounds=rounds, demo=demo)
-                    context_notice_shown = bool(coach.context_report)
-                    console.print("Started a fresh chat without saved references. Your profile and PDF library remain active; earlier chats stay in History.")
+                elif name in ("new", "fresh") and not argument:
+                    console.print("Continuing your persistent coaching conversation. Use memory reset to clear it with confirmation.")
                 elif name == "clearrefs" and not argument:
                     coach.clear_context()
                     console.print("Removed saved entries from coaching context. Your athlete profile and current conversation are still loaded.")
@@ -790,7 +793,7 @@ def _import_file(console: Console, store: Store, path: str) -> None:
 def _show_library(console: Console) -> None:
     source = folder_status()
     if source is not None:
-        console.print(Text(f"PDF source folder: {source['folder']}", style="dim"))
+        console.print(Text(f"CrossFit source folder: {source['folder']}", style="dim"))
     guides = Library().list_guides()
     if not guides:
         console.print("No methodology guides saved. Use /learn in chat, or library add PATH.")
@@ -803,12 +806,14 @@ def _prepare_library(console: Console) -> None:
     try:
         synced = sync_folder()
     except (KnowledgeError, OSError) as exc:
-        console.print(Text(f"PDF folder update skipped: {exc}", style="yellow"))
+        console.print(Text(f"CrossFit folder update skipped: {exc}", style="yellow"))
         console.print("Previously imported knowledge remains available. Check the folder, or use 'gamescoach library unwatch'.")
     else:
+        for warning in (synced or {}).get("warnings", []):
+            console.print(Text(warning, style="yellow"))
         if synced is not None and synced["imported"]:
             count = synced["imported"]
-            console.print(Text(f"PDF folder updated: {count} new or changed PDF{'s' if count != 1 else ''} imported.", style="green"))
+            console.print(Text(f"CrossFit folder updated: {count} new or changed document{'s' if count != 1 else ''} imported.", style="green"))
     try:
         ready = Library().prepare()
     except (KnowledgeError, OSError) as exc:
@@ -842,9 +847,11 @@ def _add_guide(console: Console, path: str) -> None:
 
 def _watch_library(console: Console, path: str) -> None:
     result = configure_folder(path)
-    console.print(Text(f"PDF source folder: {result['folder']}", style="green"))
+    for warning in result.get("warnings", []):
+        console.print(Text(warning, style="yellow"))
+    console.print(Text(f"CrossFit source folder: {result['folder']}", style="green"))
     count = result["imported"]
-    console.print(Text(f"Imported {count} PDF{'s' if count != 1 else ''}; {result['unchanged']} unchanged. New or changed PDFs will be checked at app startup."))
+    console.print(Text(f"Imported {count} document{'s' if count != 1 else ''}; {result['unchanged']} unchanged. New or changed PDF, DOCX, TXT and Markdown guides will be checked at app startup."))
     _prepare_library(console)
 
 
@@ -854,64 +861,9 @@ def _chat_menu_back(choice: str) -> bool:
     )
 
 
-def _choose_saved_chat(console: Console, chats: list[CoachingSession]) -> str | None:
-    console.print("[bold]Saved conversations · most recently saved first[/bold]")
-    for number, session in enumerate(chats, 1):
-        console.print(Text(f"{number}  {_chat_preview(session)}"))
-        console.print(Text(f"   Started: {session.created_at}", style="dim"))
-    console.print("[bold]b[/bold] Return to menu")
-    while True:
-        try:
-            choice = console.input("Conversation number: ").strip().lower()
-        except (EOFError, KeyboardInterrupt):
-            console.print("\nReturning to the menu.")
-            return None
-        if _chat_menu_back(choice):
-            console.print("Returning to the menu.")
-            return None
-        try:
-            number = int(choice)
-        except ValueError:
-            number = 0
-        if 1 <= number <= len(chats):
-            return chats[number - 1].id
-        console.print(f"Choose a conversation number from 1–{len(chats)}, or b to return to the menu.")
-
-
 def _chat_menu(console: Console, store: Store, *, demo: bool) -> None:
-    chats = store.list_chats(demo=demo)
-    if not chats:
-        _chat(console, store, demo=demo, from_menu=True)
-        return
-    latest = chats[0]
-    console.print("[bold]Coach chat[/bold]")
-    console.print(Text(f"Latest conversation: {_chat_preview(latest)}"))
-    console.print(Text(f"Started: {latest.created_at}", style="dim"))
-    console.print("[bold]1[/bold] Continue latest conversation (Enter)")
-    console.print("[bold]2[/bold] Start new conversation")
-    console.print("[bold]3[/bold] Choose saved conversation")
-    console.print("[bold]b[/bold] Return to menu")
-    while True:
-        try:
-            choice = console.input("Chat option [1]: ").strip().lower()
-        except (EOFError, KeyboardInterrupt):
-            console.print("\nReturning to the menu.")
-            return
-        if _chat_menu_back(choice):
-            console.print("Returning to the menu.")
-            return
-        if choice in ("", "1", "continue", "resume"):
-            _chat(console, store, demo=demo, from_menu=True, resume=latest.id)
-            return
-        if choice in ("2", "new"):
-            _chat(console, store, demo=demo, from_menu=True)
-            return
-        if choice in ("3", "choose"):
-            selected = _choose_saved_chat(console, chats)
-            if selected is not None:
-                _chat(console, store, demo=demo, from_menu=True, resume=selected)
-            return
-        console.print("Choose 1–3, press Enter to continue the latest conversation, or b to return to the menu.")
+    """Open the persistent coaching conversation without an extra picker."""
+    _chat(console, store, demo=demo, from_menu=True)
 
 
 def _interactive(console: Console, store: Store, *, demo: bool) -> int:

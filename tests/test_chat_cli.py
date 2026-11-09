@@ -188,14 +188,14 @@ def test_context_changes_save_without_another_reply_and_resume_does_not_reload_r
     assert plan.id not in cleared.stdout and newer_plan.id not in cleared.stdout
 
 
-def test_new_keeps_context_and_creates_separate_saved_chat(chat_env):
+def test_new_keeps_context_and_persistent_saved_chat(chat_env):
     plan = save_plan(chat_env)
     result = run_cli(chat_env, "chat", "--demo", input_text="First CrossFit question\n/new\nSecond CrossFit question\n/quit\n")
     assert result.returncode == 0, result.stdout + result.stderr
     chats = [entry for entry in sessions(chat_env) if entry["kind"] == "chat"]
-    assert len(chats) == 2 and len({entry["id"] for entry in chats}) == 2
-    assert all(len(entry["messages"]) == 2 and entry["context_ids"] == [plan.id] for entry in chats)
-    assert {entry["request"] for entry in chats} == {"First CrossFit question", "Second CrossFit question"}
+    assert len(chats) == 1
+    assert all(len(entry["messages"]) == 4 and entry["context_ids"] == [plan.id] for entry in chats)
+    assert [message["content"] for message in chats[0]["messages"] if message["role"] == "user"] == ["First CrossFit question", "Second CrossFit question"]
 
 
 @pytest.mark.parametrize("command", ("/quit", "/ quit", "/BACK", "/ Exit"))

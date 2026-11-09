@@ -128,21 +128,21 @@ def test_watched_folder_picks_up_a_new_pdf_on_next_start_and_unwatch_keeps_knowl
     write_pdf(source / "Methodology.pdf", GUIDE_TEXT)
     registered = run_cli(cli_env, "library", "watch", str(source))
     assert registered.returncode == 0, registered.stdout + registered.stderr
-    assert "Imported 1 PDF" in registered.stdout
+    assert "Imported 1 document" in registered.stdout
     write_pdf(source / "Competitors.pdf")
     restarted = run_cli(cli_env, input_text="q\n")
     assert restarted.returncode == 0, restarted.stdout + restarted.stderr
-    assert "PDF folder updated: 1 new or changed PDF imported" in restarted.stdout
+    assert "CrossFit folder updated: 1 new or changed document imported" in restarted.stdout
     assert "CrossFit knowledge ready: 2 guides" in restarted.stdout
     source.rename(tmp_path / "temporarily_unavailable")
     unavailable = run_cli(cli_env, input_text="q\n")
     assert unavailable.returncode == 0, unavailable.stdout + unavailable.stderr
-    assert "PDF folder update skipped" in unavailable.stdout
+    assert "CrossFit folder update skipped" in unavailable.stdout
     assert "CrossFit knowledge ready: 2 guides" in unavailable.stdout
     assert run_cli(cli_env, "library", "unwatch").returncode == 0
     listed = run_cli(cli_env, "library", "list")
     assert "Methodology.pdf" in listed.stdout and "Competitors.pdf" in listed.stdout
-    assert "PDF source folder" not in listed.stdout
+    assert "CrossFit source folder" not in listed.stdout
 
 
 @pytest.mark.parametrize("command,input_template", [
@@ -155,7 +155,7 @@ def test_menu_and_chat_accept_pdf_folders(cli_env, tmp_path, command, input_temp
     write_pdf(source / "Competitors.pdf")
     result = run_cli(cli_env, *command, input_text=input_template.format(folder=source))
     assert result.returncode == 0, result.stdout + result.stderr
-    assert "PDF source folder" in result.stdout
+    assert "CrossFit source folder" in result.stdout
     assert "CrossFit knowledge ready: 1 guide" in result.stdout
     if command:
         assert "Automatic methodology brief" in result.stdout

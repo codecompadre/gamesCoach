@@ -98,7 +98,9 @@ class WebService:
         # Opening the UI is local work only. A broken library must not prevent
         # opening Memory to remove it, so startup errors become visible notices.
         try:
-            sync_folder(library=self.library)
+            synced = sync_folder(library=self.library)
+            if synced:
+                self.notices.extend(synced.get("warnings", []))
             self.library.prepare()
         except (KnowledgeError, OSError, ValueError, RecursionError) as exc:
             self.notices.append(str(exc) if isinstance(exc, KnowledgeError) else "The local PDF library could not be prepared. Review Library or reset its retained memory.")
@@ -121,6 +123,7 @@ class WebService:
         guides = read(self.library.list_guides, [])
         settings = read(lambda: memory_settings(self.store), {"auto_references": False, "coach_notes": False})
         return {
+            "active_chat": next((chat.id for chat in read(lambda: self.store.list_chats(demo=self.demo), [])), None),
             "version": __version__,
             "demo": self.demo,
             "profile": profile.to_dict() if profile else None,
@@ -197,7 +200,10 @@ class WebService:
             else:
                 raise WebError("Use the browser's New chat, History, Files, Library and Memory controls. Plan commands are /workout, /training, /nutrition and /competition.")
         profile = self.store.load_profile() or AthleteProfile()
-        session = self.store.get_session(identifier) if identifier else None
+        chats = self.store.list_chats(demo=self.demo)
+        session = chats[0] if chats else None
+        if identifier and (session is None or identifier != session.id):
+            raise WebError("Resume the current coaching conversation before sending. Refresh this page.")
         warnings: list[str] = []
         context = self._context(data, session, warnings)
         coach = self._coach(profile, context, session)
@@ -318,6 +324,10 @@ class WebService:
             return self.chat(data)
         if path == "/api/profile":
             return self.profile(data)
+        if path == "/api/entries/delete":
+            identifier = _session_id(data)
+            self.store.delete_entry(identifier)
+            return {"removed": identifier}
         if path == "/api/import":
             return self.import_file(data)
         if path == "/api/upload":

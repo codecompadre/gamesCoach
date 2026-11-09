@@ -334,13 +334,13 @@ class Library:
 
     def add(self, value: str | Path) -> dict:
         path = document_path(value)
-        if path.suffix.lower() != ".pdf":
-            raise KnowledgeError("The methodology library accepts .pdf files. Use /file for weekly Word or text workouts.")
+        if path.suffix.lower() not in (".pdf", ".docx", ".txt", ".md"):
+            raise KnowledgeError("Supported guides are .pdf, .docx, .txt and .md. Convert older .doc files to .docx.")
         try:
             with path.open("rb") as handle:
                 data = handle.read(MAX_PDF_BYTES + 1)
         except OSError:
-            raise KnowledgeError("Cannot open the PDF. Check its path and that it is available locally.") from None
+            raise KnowledgeError("Cannot open the guide (.pdf, .docx, .txt or .md). Check its path and that it is available locally.") from None
         if len(data) > MAX_PDF_BYTES:
             raise KnowledgeError("PDF guides must be at most 25 MB. Import a smaller text-based copy.")
         identifier = hashlib.sha256(data).hexdigest()[:16]
@@ -350,30 +350,39 @@ class Library:
             return previous
         if previous is None and len(existing) >= MAX_GUIDES:
             raise KnowledgeError("The coaching library supports six guides. Remove an unused guide first.")
-        try:
-            reader = PdfReader(BytesIO(data), strict=False)
-            if reader.is_encrypted:
-                raise KnowledgeError("Password-protected PDFs are not supported. Save an unprotected copy.")
-            page_count = len(reader.pages)
-            if not 1 <= page_count <= MAX_PAGES:
-                raise KnowledgeError("Import a PDF containing 1–600 pages.")
-            passages = []
-            total = 0
-            empty_pages = 0
-            for page_number, page in enumerate(reader.pages, 1):
-                text = (page.extract_text() or "").strip()
-                if not text:
-                    empty_pages += 1
-                total += len(text)
-                if total > MAX_TEXT:
-                    raise KnowledgeError("This PDF has too much extracted text. Split it into smaller guides.")
-                passages.extend({"page": page_number, "text": chunk} for chunk in _chunks(text))
-            if not passages:
-                raise KnowledgeError("No readable text was found. Scanned/image-only PDFs need OCR before import.")
-        except KnowledgeError:
-            raise
-        except (PdfReadError, ValueError, KeyError, TypeError, OSError, IndexError, RecursionError):
-            raise KnowledgeError("Cannot read this PDF. Save a normal, unprotected, text-based PDF copy.") from None
+        if path.suffix.lower() != ".pdf":
+            from .documents import read_document, DocumentError
+            try:
+                _, text = read_document(path)
+            except DocumentError as exc:
+                raise KnowledgeError(str(exc)) from None
+            page_count, empty_pages = 1, 0
+            passages = [{"page": 1, "text": chunk} for chunk in _chunks(text)]
+        else:
+            try:
+                reader = PdfReader(BytesIO(data), strict=False)
+                if reader.is_encrypted:
+                    raise KnowledgeError("Password-protected PDFs are not supported. Save an unprotected copy.")
+                page_count = len(reader.pages)
+                if not 1 <= page_count <= MAX_PAGES:
+                    raise KnowledgeError("Import a PDF containing 1–600 pages.")
+                passages = []
+                total = 0
+                empty_pages = 0
+                for page_number, page in enumerate(reader.pages, 1):
+                    text = (page.extract_text() or "").strip()
+                    if not text:
+                        empty_pages += 1
+                    total += len(text)
+                    if total > MAX_TEXT:
+                        raise KnowledgeError("This PDF has too much extracted text. Split it into smaller guides.")
+                    passages.extend({"page": page_number, "text": chunk} for chunk in _chunks(text))
+                if not passages:
+                    raise KnowledgeError("No readable text was found. Scanned/image-only PDFs need OCR before import.")
+            except KnowledgeError:
+                raise
+            except (PdfReadError, ValueError, KeyError, TypeError, OSError, IndexError, RecursionError):
+                raise KnowledgeError("Cannot read this PDF. Save a normal, unprotected, text-based PDF copy.") from None
         guide = {
             "id": identifier,
             "filename": path.name,

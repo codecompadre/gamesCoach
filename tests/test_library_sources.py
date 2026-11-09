@@ -45,7 +45,7 @@ def test_no_registration_is_noop_and_clear_preserves_indexes(tmp_path):
     assert len(Library().list_guides()) == 1
 
 
-def test_register_imports_only_immediate_pdfs_and_saves_private_local_path(tmp_path):
+def test_register_imports_supported_immediate_documents_and_saves_private_local_path(tmp_path):
     source = folder(tmp_path)
     pdf(source / "Methodology.pdf")
     pdf(source / "Competitors.PDF", "CrossFit competitors need aerobic conditioning and recovery.")
@@ -54,8 +54,8 @@ def test_register_imports_only_immediate_pdfs_and_saves_private_local_path(tmp_p
     nested.mkdir()
     pdf(nested / "Other.pdf")
     result = configure_folder(f'"{source}"')
-    assert result == {"folder": str(source), "imported": 2, "unchanged": 0, "guides": 2}
-    assert folder_status() == {"folder": str(source), "files": 2}
+    assert result == {"folder": str(source), "imported": 3, "unchanged": 0, "guides": 3}
+    assert folder_status() == {"folder": str(source), "files": 3}
     stored = Library().root / "sources" / "folder.json"
     assert stat.S_IMODE(stored.stat().st_mode) == 0o600
     assert stat.S_IMODE(stored.parent.stat().st_mode) == 0o700

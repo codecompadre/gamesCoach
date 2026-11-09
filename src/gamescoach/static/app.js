@@ -162,7 +162,7 @@
     $("version-label").textContent = state.data.version ? `v${state.data.version}` : "";
     const profile = state.data.profile;
     const guides = libraryEntries().length;
-    $("welcome-context").textContent = `${profile ? `${profile.name || "Athlete"}'s profile is ready` : "Add your athlete profile to make coaching personal"} · ${guides ? `${guides} PDF ${guides === 1 ? "guide" : "guides"} available to both coaches` : "Your PDF guides can live here, too"}. New conversations start without saved references.`;
+    $("welcome-context").textContent = `${profile ? `${profile.name || "Athlete"}'s profile is ready` : "Add your athlete profile to make coaching personal"} · ${guides ? `${guides} PDF ${guides === 1 ? "guide" : "guides"} available to both coaches` : "Your PDF guides can live here, too"}. Your coaching conversation resumes automatically.`;
     if (showNotices) for (const message of state.data.notices || []) notice(String(message), false, true);
   }
   function renderSidebar() {
@@ -198,6 +198,7 @@
   }
   function freshChat() {
     if (state.busy) return;
+    if (state.data?.active_chat) { loadSession(state.data.active_chat); return; }
     rememberDraft();
     state.session = null;
     state.references = new Set();
@@ -220,7 +221,7 @@
     rememberDraft();
     await mutation(async () => {
       const result = await api(`/api/session/${encodeURIComponent(id)}`);
-      if (result.session.kind !== "chat") { showEntry(result.session); return; }
+      if (result.session.kind !== "chat" || (state.data.active_chat && id !== state.data.active_chat)) { showEntry(result.session); return; }
       state.session = result.session;
       state.references = new Set(result.session.context_ids || []);
       state.context = null;
@@ -638,7 +639,7 @@
   function showReferences() {
     const body = showModal("Saved references", "references", "CHOOSE WHAT YOUR COACHES USE");
     if (!body) return;
-    body.append(introduction("Attach saved plans, training files, or earlier conversations when they are useful. A new browser conversation starts with none attached. Your athlete profile and active PDF library are still available automatically."));
+    body.append(introduction("Attach saved plans, training files, or earlier conversations when they are useful. The browser resumes the references attached to your conversation. Your athlete profile and active PDF library are still available automatically."));
     if (state.references.size) {
       body.append(button("Remove all saved references", () => mutation(async () => {
         await setReferences(new Set());
@@ -752,7 +753,18 @@
     const fill = () => {
       list.replaceChildren();
       const matches = entries.filter((entry) => `${entry.request} ${entry.kind}`.toLowerCase().includes(search.input.value.toLowerCase()));
-      for (const entry of matches) list.append(referenceRow(entry));
+      for (const entry of matches) {
+        const row = referenceRow(entry);
+        row.append(button("Delete", () => mutation(async () => {
+          if (!window.confirm("Delete this saved plan or imported text? Your original document and conversation remain unchanged.")) return;
+          await api("/api/entries/delete", {id: entry.id});
+          state.references.delete(entry.id);
+          await refreshState();
+          showFiles();
+          notice("Saved entry deleted. Original documents are preserved.");
+        }), "button danger"));
+        list.append(row);
+      }
       if (!matches.length) list.append(empty("No saved entries match your search."));
     };
     search.input.addEventListener("input", fill);
@@ -760,7 +772,7 @@
     body.append(help("Check Use to include an entry in this conversation. Reading or selecting saved entries does not call either API."), list);
   }
   function showLibrary() {
-    const body = showModal("PDF knowledge library", "library", "STANDING CROSSFIT REFERENCES");
+    const body = showModal("CrossFit knowledge library", "library", "STANDING CROSSFIT REFERENCES");
     if (!body) return;
     body.append(introduction("Your guides are prepared locally. Both coaches automatically receive a standing brief and relevant source passages on every coaching request. New conversations keep this library available."));
     const guides = libraryEntries();
@@ -768,7 +780,7 @@
     for (const guide of guides) {
       const row = node("div", "entry-row");
       const content = node("div", "entry-text");
-      content.append(node("p", "entry-title", guide.filename), node("p", "entry-meta", `${guide.pages || guide.page_count || 0} PDF pages · prepared locally`));
+      content.append(node("p", "entry-title", guide.filename), node("p", "entry-meta", (/\.pdf$/i.test(guide.filename) ? `${guide.pages || 0} PDF pages · prepared locally` : "Document text · prepared locally")));
       row.append(content, button("Remove", () => mutation(async () => {
         await api("/api/library/remove", {id: guide.id});
         await refreshState();
@@ -777,10 +789,10 @@
       }), "button secondary"));
       list.append(row);
     }
-    body.append(guides.length ? list : empty("No guides yet. Add your CrossFit methodology PDFs below or upload a PDF from Saved plans & files."));
-    body.append(section("Add a PDF or watch a folder"));
+    body.append(guides.length ? list : empty("No guides yet. Add your CrossFit PDF, DOCX, TXT, or Markdown guides below or upload a PDF from Saved plans & files."));
+    body.append(section("Add a guide or watch a folder"));
     const form = node("form", "inline-form");
-    const path = field("PDF file or folder path", "", {placeholder: "C:\\Users\\you\\Desktop\\CrossFit"});
+    const path = field("Guide file or folder path", "", {placeholder: "C:\\Users\\you\\Desktop\\CrossFit"});
     form.append(path.label, button("Add to library", () => form.requestSubmit()));
     form.addEventListener("submit", (event) => {
       event.preventDefault();
@@ -793,7 +805,7 @@
         notice("PDF knowledge updated locally. Both coaches will receive the prepared context on your next request.");
       });
     });
-    body.append(form, help("A watched folder checks for new or changed PDFs at startup. Importing or refreshing a guide does not call the coaching APIs."));
+    body.append(form, help("A watched folder checks for new or changed PDF, Word (.docx), text (.txt), or Markdown (.md) guides at startup. Importing or refreshing a guide does not call the coaching APIs."));
     const folder = state.data.folder;
     if (folder?.folder) {
       body.append(section("Folder checked at startup"), node("p", "view-request", folder.folder), button("Stop checking this folder", () => mutation(async () => {
@@ -813,7 +825,7 @@
   function showContext() {
     const body = showModal("Your coaching context", "context", "YOU CHOOSE THE STARTING POINT");
     if (!body) return;
-    body.append(introduction("Saved context helps your coaches stay consistent. It is context supplied by this app; it does not retrain either model. A fresh conversation clears the conversation thread and starts without saved references."));
+    body.append(introduction("Saved context helps your coaches stay consistent. It is context supplied by this app; it does not retrain either model. Your coaching conversation resumes automatically across app restarts."));
     const profile = state.data.profile;
     body.append(detailList([
       ["This conversation", state.session ? `${state.session.messages.length / 2} saved exchanges` : "New · no earlier exchanges"],
@@ -828,13 +840,13 @@
       const sources = node("ul", "source-list");
       const seen = new Set();
       for (const passage of passages) {
-        const citation = `${passage.filename}, PDF p. ${passage.pdf_page}`;
+        const citation = (/\.pdf$/i.test(passage.filename) ? `${passage.filename}, PDF p. ${passage.pdf_page}` : passage.filename);
         if (!seen.has(citation)) { sources.append(node("li", "", citation)); seen.add(citation); }
       }
       body.append(sources);
     }
     const actions = node("div", "form-actions");
-    actions.append(button("Choose saved references", showReferences, "button secondary"), button("Start a fresh conversation", freshChat));
+    actions.append(button("Choose saved references", showReferences, "button secondary"), button("Resume coaching conversation", freshChat));
     body.append(actions, help("For a completely new learning path, Settings & memory lets you clear saved history or reset all app memory. Neither option changes the permanent CrossFit coaching scope."));
   }
   function settingSwitch(title, description, checked, name) {
@@ -867,7 +879,7 @@
     ]), help("API keys are read from the server's environment. Keys are never shown or entered on this page."), section("Context preferences"));
     const form = node("form");
     const notes = settingSwitch("Optional coaching notes", config.notes?.configured ? "Use your configured local coaching notes on future requests. The CrossFit scope always applies." : "No optional coaching notes are configured. Enabling this allows configured notes to be used on future requests.", settings.coach_notes !== false, "coach_notes");
-    const automatic = settingSwitch("Recent-history references in the CLI", "Let new terminal chats attach recent saved entries automatically. New browser conversations always start without saved references.", settings.auto_references !== false, "auto_references");
+    const automatic = settingSwitch("Recent-history references in the CLI", "Let new terminal chats attach recent saved entries automatically. The browser resumes your coaching conversation and attached references.", settings.auto_references !== false, "auto_references");
     form.append(notes.row, automatic.row);
     const actions = node("div", "form-actions");
     actions.append(button("Save preferences", () => form.requestSubmit(), "button secondary"));
@@ -891,27 +903,27 @@
     const danger = node("section", "danger-section");
     danger.append(section("Choose a clean starting point"));
     for (const [scope, title, description, label] of [
-      ["history", "Clear saved history", "Remove chats, plans, and imported training text. Keep your athlete profile and PDF knowledge library.", "Clear history"],
-      ["all", "Reset all app memory", "Also clear your athlete profile and PDF index, stop folder auto-loading, and disable optional coaching notes and automatic CLI history references.", "Reset all memory"],
+      ["history", "Clear saved history", "Remove chats, plans, and imported training text. Keep your athlete profile and CrossFit knowledge library.", "Clear history"],
+      ["factory", "Factory reset", "Clear your athlete profile, guide indexes, caches, watched-folder configuration, and saved preferences.", "Reset all memory"],
     ]) {
       const row = node("div", "memory-choice");
       const text = node("div"); text.append(node("h4", "", title), node("p", "", description));
-      row.append(text, button(label, () => showReset(scope), scope === "all" ? "button danger" : "button secondary"));
+      row.append(text, button(label, () => showReset(scope), scope === "factory" ? "button danger" : "button secondary"));
       danger.append(row);
     }
     danger.append(help("You will review the exact changes and type RESET before anything is deleted. Original source files and API keys stay untouched. Resetting app memory does not delete data from your provider accounts or retrain their models."));
     body.append(danger);
   }
   function showReset(scope) {
-    const all = scope === "all";
-    const body = showModal(all ? "Reset all app memory?" : "Clear saved history?", "reset", "THIS CHOICE IS YOURS");
+    const all = scope === "factory";
+    const body = showModal(all ? "Factory reset?" : "Clear saved history?", "reset", "THIS CHOICE IS YOURS");
     if (!body) return;
-    body.append(introduction("This permanently deletes local saved context. You can start a fresh conversation without deleting anything by choosing New conversation instead."));
+    body.append(introduction("This permanently deletes local saved context. Your original documents and API keys are preserved."));
     const description = node("div", "reset-description");
     description.append(node("p", "", "This will delete:"));
     const list = node("ul");
     list.append(node("li", "", "All saved conversations and coaching plans"), node("li", "", "All imported training text saved by this app"));
-    if (all) list.append(node("li", "", "Your athlete profile and prepared PDF knowledge index"), node("li", "", "The watched PDF folder configuration"), node("li", "", "Optional coaching notes and automatic CLI history references will be disabled"));
+    if (all) list.append(node("li", "", "Your athlete profile and prepared PDF knowledge index"), node("li", "", "The watched PDF folder configuration"), node("li", "", "Saved context preferences will be cleared"));
     description.append(list, node("p", "", all ? "Your original Word/PDF/text files and API keys stay untouched. The permanent CrossFit coaching instructions remain." : "Your athlete profile, PDF knowledge, watched folder, and coaching-note preference stay in place. Original files and API keys stay untouched."));
     body.append(description);
     const form = node("form");
@@ -921,7 +933,7 @@
     confirmation.input.spellcheck = false;
     const actions = node("div", "form-actions");
     actions.append(button("Keep my memory", showSettings, "button secondary"));
-    const commit = button(all ? "Reset all app memory" : "Delete saved history", () => form.requestSubmit(), "button danger", "trash");
+    const commit = button(all ? "Factory reset" : "Delete saved history", () => form.requestSubmit(), "button danger", "trash");
     commit.dataset.resetConfirmation = "true";
     commit.disabled = true;
     confirmation.input.addEventListener("input", () => { commit.disabled = state.busy || confirmation.input.value !== "RESET"; });
@@ -1067,6 +1079,13 @@
     try {
       if (!token || token === "{{CSRF_TOKEN}}") throw new Error("Open this page using the URL printed by gamescoach gui. The local session token is missing.");
       await refreshState(true);
+      if (state.data.active_chat) {
+        const result = await api(`/api/session/${state.data.active_chat}`);
+        state.session = result.session;
+        state.references = new Set(result.session.context_ids || []);
+      }
+      renderSidebar();
+      renderContextStrip();
       renderMessages();
     } catch (error) {
       $("welcome-context").textContent = "Your training space could not be loaded.";

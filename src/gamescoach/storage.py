@@ -138,3 +138,27 @@ class Store:
             return [item[2] for item in matches]
         except OSError:
             raise StoreError("Cannot list saved conversations. Check local data directory permissions.") from None
+
+    def delete_entry(self, identifier: str) -> None:
+        """Delete only an app-owned plan or extracted document, never a source."""
+        from .memory import _root, _check
+        root = _root(self)
+        _check(root / "sessions", directory=True)
+        path = root / "sessions" / f"{identifier}.json"
+        entry = self.get_session(identifier)
+        if entry.kind == "chat":
+            raise StoreError("The persistent conversation can be cleared using confirmed memory reset.")
+        _check(path)
+        # Remove live references before deleting their retained source. Past
+        # messages remain verbatim; the next resumed request must not fail on
+        # a dangling reference ID.
+        from dataclasses import replace
+        for demo in (False, True):
+            chats = self.list_chats(demo=demo)
+            if chats and identifier in chats[0].context_ids:
+                chat = chats[0]
+                self.save_chat(replace(chat, context_ids=[item for item in chat.context_ids if item != identifier]))
+        try:
+            path.unlink()
+        except OSError:
+            raise StoreError("Cannot delete this saved entry. Check local permissions.") from None

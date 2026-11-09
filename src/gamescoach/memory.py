@@ -156,19 +156,21 @@ def reset_memory(scope: str, confirmation: str, store: Store | None = None) -> d
     A full reset also disables automatic history references and external coach
     notes. Original PDFs, documents, notes, and API key configuration remain intact.
     """
-    if scope not in ("history", "all") or not isinstance(scope, str):
-        raise StoreError("Choose memory reset scope history or all.")
+    if scope not in ("history", "all", "factory") or not isinstance(scope, str):
+        raise StoreError("Choose memory reset scope history, all or factory.")
     if confirmation != "RESET" or not isinstance(confirmation, str):
         raise StoreError("Type RESET exactly to confirm clearing saved memory.")
+    factory = scope == "factory"
+    full = scope in ("all", "factory")
     root = _root(store)
     inventory = _inventory(root)
     # Preflight every known target before any settings or retained data changes.
     _check(root / "memory.json")
-    settings = {"auto_references": False, "coach_notes": False} if scope == "all" else _settings(root / "memory.json")
+    settings = {"auto_references": False, "coach_notes": False} if full else _settings(root / "memory.json")
     deleted = {"sessions": 0, "guides": 0, "profile": False, "watched_folder": False, "prepared_cache": False}
     mutated = False
     try:
-        if scope == "all":
+        if full:
             save_memory_settings(settings, Store(root))
             mutated = True
         for path in inventory["sessions"]:
@@ -176,7 +178,7 @@ def reset_memory(scope: str, confirmation: str, store: Store | None = None) -> d
             mutated = True
             if path.suffix == ".json":
                 deleted["sessions"] += 1
-        if scope == "all":
+        if full:
             for path in inventory["guides"]:
                 path.unlink()
                 mutated = True
@@ -194,6 +196,9 @@ def reset_memory(scope: str, confirmation: str, store: Store | None = None) -> d
             # well as the disk cache so the next coaching request starts clean.
             from .knowledge import _PREPARED
             _PREPARED.pop(str(root / "library"), None)
+        if factory:
+            (root / "memory.json").unlink(missing_ok=True)
+            settings = dict(_DEFAULTS)
         status = memory_status(Store(root))
     except (OSError, StoreError):
         if mutated:
